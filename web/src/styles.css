@@ -179,6 +179,22 @@ h1 {
   margin: 0 0 14px;
 }
 
+.libraryForm {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.45fr) minmax(160px, 1fr) auto;
+  gap: 8px;
+  border-bottom: 1px solid #eef2f3;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+.libraryForm input {
+  min-width: 0;
+  border: 1px solid #ccd4d8;
+  border-radius: 6px;
+  padding: 8px 9px;
+}
+
 .row,
 .listItem,
 .errorRow {
@@ -434,6 +450,10 @@ h1 {
   }
 
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .libraryForm {
     grid-template-columns: 1fr;
   }
 

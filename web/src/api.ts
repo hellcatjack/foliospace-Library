@@ -70,6 +70,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   libraries: () => request<Library[]>("/api/libraries"),
+  createLibrary: (name: string, rootPath: string) =>
+    request<Library>("/api/libraries", {
+      method: "POST",
+      body: JSON.stringify({ name, rootPath }),
+    }),
   scan: (libraryId: number) => request<ScanJob>(`/api/libraries/${libraryId}/scan`, { method: "POST" }),
   series: () => request<Series[]>("/api/series"),
   books: (seriesId: number) => request<Book[]>(`/api/series/${seriesId}/books`),

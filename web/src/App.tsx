@@ -21,6 +21,8 @@ export function App() {
   const [status, setStatus] = useState("Ready");
   const [activeTask, setActiveTask] = useState<string | null>(null);
   const [readerImageLoaded, setReaderImageLoaded] = useState(false);
+  const [newLibraryName, setNewLibraryName] = useState("");
+  const [newLibraryPath, setNewLibraryPath] = useState("");
 
   async function refreshAll(showProgress = false) {
     if (showProgress) {
@@ -76,6 +78,22 @@ export function App() {
       const job = await api.scan(library.id);
       setStatus(`Scan queued: job #${job.id}`);
       await refreshAll();
+    } finally {
+      setActiveTask(null);
+    }
+  }
+
+  async function addLibrary(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActiveTask("Adding library");
+    try {
+      const library = await api.createLibrary(newLibraryName, newLibraryPath);
+      setStatus(`Library added: ${library.rootPath}`);
+      setNewLibraryName("");
+      setNewLibraryPath("");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to add library");
     } finally {
       setActiveTask(null);
     }
@@ -182,6 +200,19 @@ export function App() {
           <div className="grid">
             <section className="panel">
               <h1>Libraries</h1>
+              <form className="libraryForm" onSubmit={addLibrary}>
+                <input
+                  value={newLibraryName}
+                  onChange={(event) => setNewLibraryName(event.target.value)}
+                  placeholder="Name"
+                />
+                <input
+                  value={newLibraryPath}
+                  onChange={(event) => setNewLibraryPath(event.target.value)}
+                  placeholder="/volume2/ComicCenter"
+                />
+                <button disabled={!newLibraryPath.trim()}>Add</button>
+              </form>
               {libraries.map((library) => (
                 <div className="row" key={library.id}>
                   <div>

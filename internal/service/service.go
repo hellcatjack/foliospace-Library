@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"foliospace-reader/internal/archive"
 	"foliospace-reader/internal/domain"
@@ -23,6 +24,14 @@ func New(store *store.Store) *Service {
 }
 
 func (s *Service) CreateLibrary(name string, rootPath string) (domain.Library, error) {
+	name = strings.TrimSpace(name)
+	rootPath = strings.TrimSpace(rootPath)
+	if rootPath == "" {
+		return domain.Library{}, fmt.Errorf("library root path is required")
+	}
+	if name == "" {
+		name = rootPath
+	}
 	return s.store.CreateLibrary(name, rootPath)
 }
 
