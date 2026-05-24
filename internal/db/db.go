@@ -18,6 +18,8 @@ func Open(configDir string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
 	if err := Migrate(conn); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -28,6 +30,8 @@ func Open(configDir string) (*sql.DB, error) {
 func Migrate(conn *sql.DB) error {
 	stmts := []string{
 		`PRAGMA foreign_keys = ON`,
+		`PRAGMA busy_timeout = 5000`,
+		`PRAGMA journal_mode = WAL`,
 		`CREATE TABLE IF NOT EXISTS libraries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
