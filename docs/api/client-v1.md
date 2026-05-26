@@ -78,6 +78,7 @@ Public. Clears the web auth cookie.
 7. For EPUB, load chapters/resources from `epub.resourceBaseUrl`.
 8. Sync progress with `GET /api/books/{bookId}/progress` and `PUT /api/books/{bookId}/progress`.
 9. Sync private state with `GET/PUT /api/client/books/{bookId}/private-state`.
+10. Sync UI language and reader defaults with `GET/PUT /api/client/preferences`.
 
 ## Client Endpoints
 
@@ -100,11 +101,54 @@ Response:
     "pageStreaming": true,
     "privateState": true,
     "search": true,
+    "preferences": true,
     "bearerTokenAuth": true,
     "scannerJobEvents": true
   }
 }
 ```
+
+### `GET /api/client/preferences`
+
+Returns server-side client preferences. Web currently uses local storage only as a first-paint fallback, then reconciles from this API.
+
+Response:
+
+```json
+{
+  "locale": "zh",
+  "readerPageMode": "single",
+  "epubPageMode": "single",
+  "epubTheme": "light",
+  "epubFontSize": 18
+}
+```
+
+Fields:
+
+- `locale`: `zh`, `zht`, `en`, `ja`, or `ko`.
+- `readerPageMode`: `single` or `double` for image archives.
+- `epubPageMode`: `single` or `double`.
+- `epubTheme`: `light`, `sepia`, or `dark`.
+- `epubFontSize`: integer, normalized to `14...26`.
+
+### `PUT /api/client/preferences`
+
+Saves client preferences and returns the normalized value.
+
+Request:
+
+```json
+{
+  "locale": "zht",
+  "readerPageMode": "double",
+  "epubPageMode": "double",
+  "epubTheme": "dark",
+  "epubFontSize": 24
+}
+```
+
+Response is the same shape as `GET /api/client/preferences`.
 
 ### `GET /api/client/home`
 
@@ -525,6 +569,7 @@ Good MCP tools:
 - `foliospace.open_manifest`: return the client manifest for a book.
 - `foliospace.get_private_state` and `foliospace.save_private_state`: inspect or update status, favorite, rating, tags, and notes.
 - `foliospace.list_favorites` and `foliospace.list_private_status`: browse private shelves such as favorites and want-to-read.
+- `foliospace.get_preferences` and `foliospace.save_preferences`: inspect or update UI language and reader defaults.
 - `foliospace.get_progress` and `foliospace.save_progress`: inspect or update reading progress.
 - `foliospace.list_collections` and `foliospace.list_volumes`: browse the indexed library.
 - `foliospace.scan_library`: start a scan for a configured library.
@@ -536,6 +581,7 @@ Good MCP resources:
 
 - `foliospace://client/info`
 - `foliospace://home`
+- `foliospace://client/preferences`
 - `foliospace://collections/{collectionId}`
 - `foliospace://books/{bookId}/manifest`
 - `foliospace://books/{bookId}/private-state`
@@ -550,6 +596,7 @@ Useful assistant workflows:
 - "Find unread EPUBs in this collection."
 - "Show books tagged Vision Pro that are marked want-to-read."
 - "Mark this book as favorite and add the spatial tag."
+- "Switch the library UI to Traditional Chinese and default EPUB to dark double-page mode."
 - "Show books with scan errors."
 - "Explain why this book will not open."
 - "Start a scan and watch job events."

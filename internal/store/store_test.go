@@ -96,6 +96,42 @@ func TestStorePersistsLibraryBookProgressAndErrors(t *testing.T) {
 	}
 }
 
+func TestStorePersistsClientPreferences(t *testing.T) {
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	s := New(conn)
+	defaults, err := s.ClientPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Locale != "zh" || defaults.ReaderPageMode != "single" || defaults.EPUBTheme != "light" || defaults.EPUBFontSize != 18 {
+		t.Fatalf("default preferences = %#v, want zh single light 18", defaults)
+	}
+
+	want := domain.ClientPreferences{
+		Locale:         "ko",
+		ReaderPageMode: "double",
+		EPUBPageMode:   "double",
+		EPUBTheme:      "dark",
+		EPUBFontSize:   24,
+	}
+	if err := s.SaveClientPreferences(want); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.ClientPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("preferences = %#v, want %#v", got, want)
+	}
+}
+
 func TestStoreListsBooksPageWithSearchAndSort(t *testing.T) {
 	conn, err := db.Open(t.TempDir())
 	if err != nil {

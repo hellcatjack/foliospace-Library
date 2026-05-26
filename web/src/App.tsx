@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, MouseEvent, TouchEvent } from "react";
-import { api, Book, BookPrivateState, clearAuthToken, EpubManifest, FileError, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken } from "./api";
+import { api, Book, BookPrivateState, clearAuthToken, ClientPreferences, EpubManifest, FileError, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken } from "./api";
 
 type View = "library" | "reader" | "jobs" | "errors";
 type ReaderPageMode = "single" | "double";
@@ -10,6 +10,7 @@ type Locale = "zh" | "zht" | "en" | "ja" | "ko";
 const bookPageSize = 60;
 
 export function App() {
+  const initialPreferences = useRef(readLocalPreferences()).current;
   const [view, setView] = useState<View>("library");
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [series, setSeries] = useState<Series[]>([]);
@@ -45,11 +46,11 @@ export function App() {
   const [activeTask, setActiveTask] = useState<string | null>(null);
   const [readerLoadState, setReaderLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [readerRetryKey, setReaderRetryKey] = useState(0);
-  const [readerPageMode, setReaderPageMode] = useState<ReaderPageMode>("single");
+  const [readerPageMode, setReaderPageMode] = useState<ReaderPageMode>(initialPreferences.readerPageMode);
   const [readerFullscreen, setReaderFullscreen] = useState(false);
-  const [epubPageMode, setEpubPageMode] = useState<ReaderPageMode>("single");
-  const [epubFontSize, setEpubFontSize] = useState(18);
-  const [epubTheme, setEpubTheme] = useState<EpubTheme>("light");
+  const [epubPageMode, setEpubPageMode] = useState<ReaderPageMode>(initialPreferences.epubPageMode);
+  const [epubFontSize, setEpubFontSize] = useState(initialPreferences.epubFontSize);
+  const [epubTheme, setEpubTheme] = useState<EpubTheme>(initialPreferences.epubTheme);
   const [epubPagePosition, setEpubPagePosition] = useState(0);
   const [epubPageCount, setEpubPageCount] = useState(1);
   const [epubTocOpen, setEpubTocOpen] = useState(false);
@@ -57,7 +58,7 @@ export function App() {
   const [newLibraryPath, setNewLibraryPath] = useState("");
   const [privateDraft, setPrivateDraft] = useState<BookPrivateState>(emptyPrivateState());
   const [privateSaving, setPrivateSaving] = useState(false);
-  const [locale, setLocale] = useState<Locale>(readLocale());
+  const [locale, setLocale] = useState<Locale>(initialPreferences.locale);
   const t = translations[locale];
   const imageCache = useRef<Set<string>>(new Set());
   const readerRef = useRef<HTMLElement | null>(null);
@@ -65,12 +66,24 @@ export function App() {
   const bookListRequest = useRef(0);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const epubRestorePosition = useRef<number | null>(null);
+  const preferencesLoaded = useRef(false);
+
+  function applyClientPreferences(preferences: ClientPreferences) {
+    const normalized = normalizeClientPreferences(preferences);
+    setLocale(normalized.locale);
+    setReaderPageMode(normalized.readerPageMode);
+    setEpubPageMode(normalized.epubPageMode);
+    setEpubTheme(normalized.epubTheme);
+    setEpubFontSize(normalized.epubFontSize);
+    writeLocalPreferences(normalized);
+  }
 
   async function refreshAll(showProgress = false) {
     if (showProgress) {
       setActiveTask("Refreshing library");
     }
-    const [nextLibraries, nextSeries, nextJobs, nextErrors, nextContinueBooks, nextRecentBooks, nextFavoriteBooks, nextWantBooks] = await Promise.all([
+    const [preferences, nextLibraries, nextSeries, nextJobs, nextErrors, nextContinueBooks, nextRecentBooks, nextFavoriteBooks, nextWantBooks] = await Promise.all([
+      api.clientPreferences(),
       api.libraries(),
       api.series(),
       api.jobs(),
@@ -80,6 +93,8 @@ export function App() {
       api.favoriteBooks(),
       api.privateStatusBooks("want"),
     ]);
+    applyClientPreferences(preferences);
+    preferencesLoaded.current = true;
     setLibraries(nextLibraries);
     setSeries(nextSeries);
     setJobs(nextJobs);
@@ -126,8 +141,29 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("foliospace_locale", locale);
-  }, [locale]);
+    writeLocalPreferences({
+      locale,
+      readerPageMode,
+      epubPageMode,
+      epubTheme,
+      epubFontSize,
+    });
+    if (!preferencesLoaded.current || authRequired) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api.saveClientPreferences({
+        locale,
+        readerPageMode,
+        epubPageMode,
+        epubTheme,
+        epubFontSize,
+      }).catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Failed to save preferences");
+      });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [locale, readerPageMode, epubPageMode, epubTheme, epubFontSize, authRequired]);
 
   useEffect(() => {
     const value = query.trim();
@@ -1113,11 +1149,12 @@ export function App() {
                   <button onClick={goReaderPrevious}>{t.previous}</button>
                   {selectedBook.format === "epub" && (
                     <span className="epubProgress">
-                      {t.pageLabel(Math.min(epubPagePosition + 1, epubPageCount), epubPageCount)}
+                      {t.epubChapterPageLabel(Math.min(epubPagePosition + 1, epubPageCount), epubPageCount)}
                     </span>
                   )}
                   <input
                     type="range"
+                    aria-label={selectedBook.format === "epub" ? t.epubChapterSlider : t.pageSlider}
                     min="0"
                     max={Math.max(0, pages.length - 1)}
                     value={pageIndex}
@@ -1584,6 +1621,9 @@ const translations = {
     retry: "重试",
     previous: "上一页",
     next: "下一页",
+    epubChapterPageLabel: (current: number, total: number) => `本章第 ${current} / ${total} 页`,
+    epubChapterSlider: "章节进度",
+    pageSlider: "页面进度",
     pageLabel: (current: number, total: number) => `第 ${current} / ${total} 页`,
     selectBook: "选择一本书开始阅读。",
     statusFavorite: "收藏",
@@ -1675,6 +1715,9 @@ const translations = {
     retry: "重試",
     previous: "上一頁",
     next: "下一頁",
+    epubChapterPageLabel: (current: number, total: number) => `本章第 ${current} / ${total} 頁`,
+    epubChapterSlider: "章節進度",
+    pageSlider: "頁面進度",
     pageLabel: (current: number, total: number) => `第 ${current} / ${total} 頁`,
     selectBook: "選擇一本書開始閱讀。",
     statusFavorite: "收藏",
@@ -1766,6 +1809,9 @@ const translations = {
     retry: "Retry",
     previous: "Previous",
     next: "Next",
+    epubChapterPageLabel: (current: number, total: number) => `Chapter page ${current} / ${total}`,
+    epubChapterSlider: "Chapter progress",
+    pageSlider: "Page progress",
     pageLabel: (current: number, total: number) => `Page ${current} / ${total}`,
     selectBook: "Select a book to start reading.",
     statusFavorite: "Favorite",
@@ -1857,6 +1903,9 @@ const translations = {
     retry: "再試行",
     previous: "前へ",
     next: "次へ",
+    epubChapterPageLabel: (current: number, total: number) => `章内 ${current} / ${total} ページ`,
+    epubChapterSlider: "章の進捗",
+    pageSlider: "ページ進捗",
     pageLabel: (current: number, total: number) => `${current} / ${total} ページ`,
     selectBook: "本を選んで読み始めます。",
     statusFavorite: "お気に入り",
@@ -1948,6 +1997,9 @@ const translations = {
     retry: "다시 시도",
     previous: "이전",
     next: "다음",
+    epubChapterPageLabel: (current: number, total: number) => `현재 장 ${current} / ${total}페이지`,
+    epubChapterSlider: "장 진행률",
+    pageSlider: "페이지 진행률",
     pageLabel: (current: number, total: number) => `${current} / ${total}페이지`,
     selectBook: "읽을 책을 선택하세요.",
     statusFavorite: "즐겨찾기",
@@ -1966,9 +2018,53 @@ const translations = {
   },
 };
 
-function readLocale(): Locale {
-  const value = window.localStorage.getItem("foliospace_locale");
-  return value === "en" || value === "ja" || value === "ko" || value === "zh" || value === "zht" ? value : "zh";
+function readLocalPreferences(): ClientPreferences {
+  const stored = window.localStorage.getItem("foliospace_preferences");
+  if (stored) {
+    try {
+      return normalizeClientPreferences(JSON.parse(stored));
+    } catch {
+      // Fall through to legacy locale migration.
+    }
+  }
+  const legacyLocale = window.localStorage.getItem("foliospace_locale");
+  return normalizeClientPreferences({ ...defaultClientPreferences(), locale: isLocale(legacyLocale) ? legacyLocale : "zh" });
+}
+
+function writeLocalPreferences(preferences: ClientPreferences) {
+  const normalized = normalizeClientPreferences(preferences);
+  window.localStorage.setItem("foliospace_preferences", JSON.stringify(normalized));
+  window.localStorage.setItem("foliospace_locale", normalized.locale);
+}
+
+function defaultClientPreferences(): ClientPreferences {
+  return {
+    locale: "zh",
+    readerPageMode: "single",
+    epubPageMode: "single",
+    epubTheme: "light",
+    epubFontSize: 18,
+  };
+}
+
+function normalizeClientPreferences(value: Partial<ClientPreferences>): ClientPreferences {
+  const defaults = defaultClientPreferences();
+  const locale = value.locale;
+  const readerPageMode = value.readerPageMode;
+  const epubPageMode = value.epubPageMode;
+  const epubTheme = value.epubTheme;
+  const epubFontSize = Number(value.epubFontSize);
+  return {
+    locale: locale === "zh" || locale === "zht" || locale === "en" || locale === "ja" || locale === "ko" ? locale : defaults.locale,
+    readerPageMode: readerPageMode === "double" ? "double" : defaults.readerPageMode,
+    epubPageMode: epubPageMode === "double" ? "double" : defaults.epubPageMode,
+    epubTheme: epubTheme === "sepia" || epubTheme === "dark" || epubTheme === "light" ? epubTheme : defaults.epubTheme,
+    epubFontSize: Number.isFinite(epubFontSize) ? Math.max(14, Math.min(26, Math.round(epubFontSize))) : defaults.epubFontSize,
+  };
+}
+
+function isLocale(value: string | null | undefined): value is Locale {
+  return value === "zh" || value === "zht" || value === "en" || value === "ja" || value === "ko";
 }
 
 function emptyPrivateState(): BookPrivateState {

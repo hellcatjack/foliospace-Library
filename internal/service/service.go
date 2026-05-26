@@ -82,6 +82,52 @@ func (s *Service) UpdateBookPrivateState(bookID int64, state domain.BookPrivateS
 	return s.store.BookByID(bookID)
 }
 
+func (s *Service) ClientPreferences() (domain.ClientPreferences, error) {
+	return s.store.ClientPreferences()
+}
+
+func (s *Service) SaveClientPreferences(prefs domain.ClientPreferences) (domain.ClientPreferences, error) {
+	prefs = normalizeClientPreferences(prefs)
+	if err := s.store.SaveClientPreferences(prefs); err != nil {
+		return domain.ClientPreferences{}, err
+	}
+	return s.store.ClientPreferences()
+}
+
+func normalizeClientPreferences(prefs domain.ClientPreferences) domain.ClientPreferences {
+	if !oneOf(prefs.Locale, "zh", "zht", "en", "ja", "ko") {
+		prefs.Locale = "zh"
+	}
+	if !oneOf(prefs.ReaderPageMode, "single", "double") {
+		prefs.ReaderPageMode = "single"
+	}
+	if !oneOf(prefs.EPUBPageMode, "single", "double") {
+		prefs.EPUBPageMode = "single"
+	}
+	if !oneOf(prefs.EPUBTheme, "light", "sepia", "dark") {
+		prefs.EPUBTheme = "light"
+	}
+	if prefs.EPUBFontSize == 0 {
+		prefs.EPUBFontSize = 18
+	}
+	if prefs.EPUBFontSize < 14 {
+		prefs.EPUBFontSize = 14
+	}
+	if prefs.EPUBFontSize > 26 {
+		prefs.EPUBFontSize = 26
+	}
+	return prefs
+}
+
+func oneOf(value string, allowed ...string) bool {
+	for _, item := range allowed {
+		if value == item {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) ContinueReading(limit int) ([]domain.Book, error) {
 	return s.store.ListContinueReading(limit)
 }

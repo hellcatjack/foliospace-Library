@@ -368,6 +368,32 @@ func TestClientAPIPrivateStateUsesSafeDTOs(t *testing.T) {
 	}
 }
 
+func TestClientAPIPreferences(t *testing.T) {
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	st := store.New(conn)
+	ts := httptest.NewServer(New(service.New(st), nil).Routes())
+	defer ts.Close()
+
+	defaultBody := get(t, ts.URL+"/api/client/preferences")
+	if !strings.Contains(defaultBody, `"locale":"zh"`) || !strings.Contains(defaultBody, `"epubFontSize":18`) {
+		t.Fatalf("default preferences response %q does not include defaults", defaultBody)
+	}
+
+	updatedBody := putJSONBody(t, ts.URL+"/api/client/preferences", `{"locale":"zht","readerPageMode":"double","epubPageMode":"double","epubTheme":"dark","epubFontSize":40}`)
+	if !strings.Contains(updatedBody, `"locale":"zht"`) || !strings.Contains(updatedBody, `"readerPageMode":"double"`) || !strings.Contains(updatedBody, `"epubTheme":"dark"`) || !strings.Contains(updatedBody, `"epubFontSize":26`) {
+		t.Fatalf("updated preferences response %q does not include normalized preferences", updatedBody)
+	}
+
+	savedBody := get(t, ts.URL+"/api/client/preferences")
+	if savedBody != updatedBody {
+		t.Fatalf("saved preferences = %q, want %q", savedBody, updatedBody)
+	}
+}
+
 func TestAPIRequiresBearerTokenWhenConfigured(t *testing.T) {
 	conn, err := db.Open(t.TempDir())
 	if err != nil {

@@ -66,6 +66,14 @@ type BookPrivateState struct {
 	Summary  string   `json:"summary"`
 }
 
+type ClientPreferences struct {
+	Locale         string `json:"locale"`
+	ReaderPageMode string `json:"readerPageMode"`
+	EPUBPageMode   string `json:"epubPageMode"`
+	EPUBTheme      string `json:"epubTheme"`
+	EPUBFontSize   int    `json:"epubFontSize"`
+}
+
 type BookListOptions struct {
 	SeriesID int64
 	Limit    int

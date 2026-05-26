@@ -41,6 +41,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/auth/check", s.handleAuthCheck)
 	mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("/api/client/info", s.handleClientInfo)
+	mux.HandleFunc("/api/client/preferences", s.handleClientPreferences)
 	mux.HandleFunc("/api/client/home", s.handleClientHome)
 	mux.HandleFunc("/api/client/search", s.handleClientSearch)
 	mux.HandleFunc("/api/client/books/favorites", s.handleClientFavoriteBooks)
@@ -142,6 +143,7 @@ func (s *Server) handleClientInfo(w http.ResponseWriter, r *http.Request) {
 			PageStreaming:    true,
 			PrivateState:     true,
 			Search:           true,
+			Preferences:      true,
 			BearerTokenAuth:  s.options.APIToken != "",
 			ScannerJobEvents: true,
 		},
@@ -188,6 +190,27 @@ func (s *Server) handleClientHome(w http.ResponseWriter, r *http.Request) {
 		WantToRead:      clientBooks(wantBooks),
 		Collections:     clientCollections(collections),
 	})
+}
+
+func (s *Server) handleClientPreferences(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeClient(w, r) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		prefs, err := s.service.ClientPreferences()
+		writeJSONOrError(w, prefs, err)
+	case http.MethodPut:
+		var req domain.ClientPreferences
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		prefs, err := s.service.SaveClientPreferences(req)
+		writeJSONOrError(w, prefs, err)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleClientBookAction(w http.ResponseWriter, r *http.Request) {
@@ -828,6 +851,7 @@ type clientCapabilities struct {
 	PageStreaming    bool `json:"pageStreaming"`
 	PrivateState     bool `json:"privateState"`
 	Search           bool `json:"search"`
+	Preferences      bool `json:"preferences"`
 	BearerTokenAuth  bool `json:"bearerTokenAuth"`
 	ScannerJobEvents bool `json:"scannerJobEvents"`
 }

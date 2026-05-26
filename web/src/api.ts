@@ -49,6 +49,14 @@ export type SearchResponse = {
   books: Book[];
 };
 
+export type ClientPreferences = {
+  locale: "zh" | "zht" | "en" | "ja" | "ko";
+  readerPageMode: "single" | "double";
+  epubPageMode: "single" | "double";
+  epubTheme: "light" | "sepia" | "dark";
+  epubFontSize: number;
+};
+
 export type BookListPage = {
   items: Book[];
   total: number;
@@ -172,6 +180,12 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   authLogout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  clientPreferences: () => request<ClientPreferences>("/api/client/preferences"),
+  saveClientPreferences: (preferences: ClientPreferences) =>
+    request<ClientPreferences>("/api/client/preferences", {
+      method: "PUT",
+      body: JSON.stringify(preferences),
+    }),
   libraries: () => request<Library[]>("/api/libraries"),
   createLibrary: (name: string, rootPath: string) =>
     request<Library>("/api/libraries", {

@@ -126,6 +126,15 @@ func Migrate(conn *sql.DB) error {
 			last_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(path, code)
 		)`,
+		`CREATE TABLE IF NOT EXISTS client_preferences (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			locale TEXT NOT NULL DEFAULT 'zh',
+			reader_page_mode TEXT NOT NULL DEFAULT 'single',
+			epub_page_mode TEXT NOT NULL DEFAULT 'single',
+			epub_theme TEXT NOT NULL DEFAULT 'light',
+			epub_font_size INTEGER NOT NULL DEFAULT 18,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, stmt := range stmts {

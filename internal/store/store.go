@@ -219,6 +219,42 @@ func (s *Store) UpdateBookPrivateState(bookID int64, state domain.BookPrivateSta
 	return err
 }
 
+func (s *Store) ClientPreferences() (domain.ClientPreferences, error) {
+	row := s.db.QueryRow(`SELECT locale, reader_page_mode, epub_page_mode, epub_theme, epub_font_size FROM client_preferences WHERE id = 1`)
+	var prefs domain.ClientPreferences
+	err := row.Scan(&prefs.Locale, &prefs.ReaderPageMode, &prefs.EPUBPageMode, &prefs.EPUBTheme, &prefs.EPUBFontSize)
+	if err == sql.ErrNoRows {
+		return DefaultClientPreferences(), nil
+	}
+	if err != nil {
+		return domain.ClientPreferences{}, err
+	}
+	return prefs, nil
+}
+
+func (s *Store) SaveClientPreferences(prefs domain.ClientPreferences) error {
+	_, err := s.db.Exec(`INSERT INTO client_preferences(id, locale, reader_page_mode, epub_page_mode, epub_theme, epub_font_size)
+		VALUES(1, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET locale = excluded.locale,
+			reader_page_mode = excluded.reader_page_mode,
+			epub_page_mode = excluded.epub_page_mode,
+			epub_theme = excluded.epub_theme,
+			epub_font_size = excluded.epub_font_size,
+			updated_at = CURRENT_TIMESTAMP`,
+		prefs.Locale, prefs.ReaderPageMode, prefs.EPUBPageMode, prefs.EPUBTheme, prefs.EPUBFontSize)
+	return err
+}
+
+func DefaultClientPreferences() domain.ClientPreferences {
+	return domain.ClientPreferences{
+		Locale:         "zh",
+		ReaderPageMode: "single",
+		EPUBPageMode:   "single",
+		EPUBTheme:      "light",
+		EPUBFontSize:   18,
+	}
+}
+
 func (s *Store) ListBooks(seriesID int64) ([]domain.Book, error) {
 	rows, err := s.db.Query(bookSelectSQL()+`
 		WHERE b.series_id = ?
