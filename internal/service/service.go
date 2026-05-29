@@ -303,7 +303,7 @@ func directoryRootName(path string) string {
 }
 
 func normalizeLibraryAssetType(value string) string {
-	if oneOf(value, "mixed", "book", "comic", "game") {
+	if oneOf(value, "mixed", "book", "comic", "game", "video") {
 		return value
 	}
 	return "mixed"

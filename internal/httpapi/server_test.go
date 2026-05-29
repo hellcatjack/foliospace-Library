@@ -678,6 +678,23 @@ func TestAPICreatesGameTypedLibraryForZipROMSets(t *testing.T) {
 	}
 }
 
+func TestAPICreatesVideoTypedLibrary(t *testing.T) {
+	root := t.TempDir()
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	st := store.New(conn)
+	ts := httptest.NewServer(New(service.New(st), nil).Routes())
+	defer ts.Close()
+
+	body := postJSONBody(t, ts.URL+"/api/libraries", `{"name":"Videos","rootPath":"`+root+`","assetType":"video"}`)
+	if !strings.Contains(body, `"assetType":"video"`) {
+		t.Fatalf("library response %q does not include video asset type", body)
+	}
+}
+
 func TestSetupStatusAndInitializeStoresTokenAndLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("FOLIOSPACE_DIRECTORY_ROOTS", root)
