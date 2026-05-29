@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -197,6 +199,43 @@ func TestServerAggregatesLibraryHealth(t *testing.T) {
 	body := mustJSON(t, response.Result)
 	if !strings.Contains(body, `\"jobCount\": 2`) || !strings.Contains(body, `\"errorCount\": 1`) {
 		t.Fatalf("health response %s missing summary", body)
+	}
+}
+
+func TestServerServeAcceptsJSONLineTransport(t *testing.T) {
+	server := New("http://example.test", "")
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"hermes","version":"0.1.0"}}}` + "\n")
+	var output bytes.Buffer
+
+	if err := server.Serve(context.Background(), input, &output); err != nil {
+		t.Fatalf("Serve error = %v", err)
+	}
+
+	got := output.String()
+	if strings.Contains(got, "Content-Length") {
+		t.Fatalf("JSON-line transport wrote framed response: %q", got)
+	}
+	if !strings.Contains(got, `"result"`) || !strings.Contains(got, `"protocolVersion":"2024-11-05"`) {
+		t.Fatalf("JSON-line response = %q, want initialize result", got)
+	}
+}
+
+func TestServerServeAcceptsFramedTransport(t *testing.T) {
+	server := New("http://example.test", "")
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"codex","version":"0.1.0"}}}`)
+	input := strings.NewReader("Content-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + string(body))
+	var output bytes.Buffer
+
+	if err := server.Serve(context.Background(), input, &output); err != nil {
+		t.Fatalf("Serve error = %v", err)
+	}
+
+	got := output.String()
+	if !strings.HasPrefix(got, "Content-Length: ") {
+		t.Fatalf("framed transport wrote non-framed response: %q", got)
+	}
+	if !strings.Contains(got, `"result"`) || !strings.Contains(got, `"protocolVersion":"2024-11-05"`) {
+		t.Fatalf("framed response = %q, want initialize result", got)
 	}
 }
 
