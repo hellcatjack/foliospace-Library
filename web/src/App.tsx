@@ -3,7 +3,7 @@ import type { FormEvent, MouseEvent, ReactNode, TouchEvent } from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.mjs?url";
-import { api, Book, BookPrivateState, clearAuthToken, ClientPreferences, DirectoryEntry, DirectoryListing, EpubManifest, FileError, GameAsset, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken, SetupStatus, ScanSettings, VideoAsset, VideoTranscodeStatus } from "./api";
+import { api, Book, BookPrivateState, clearAuthToken, ClientPreferences, DirectoryEntry, DirectoryListing, EpubManifest, FileError, GameAsset, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken, SetupStatus, ScanSettings, VideoAsset, VideoTranscodeQueueStatus, VideoTranscodeStatus } from "./api";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 
@@ -38,6 +38,7 @@ export function App() {
   const [videoCatalogLoading, setVideoCatalogLoading] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoAsset | null>(null);
   const [videoTranscodeStatus, setVideoTranscodeStatus] = useState<VideoTranscodeStatus | null>(null);
+  const [videoTranscodeQueueStatus, setVideoTranscodeQueueStatus] = useState<VideoTranscodeQueueStatus | null>(null);
   const [videoPlaybackReloadKey, setVideoPlaybackReloadKey] = useState(0);
   const [jobs, setJobs] = useState<ScanJob[]>([]);
   const [errors, setErrors] = useState<FileError[]>([]);
@@ -651,6 +652,7 @@ export function App() {
   useEffect(() => {
     previousVideoTranscodeStatus.current = "";
     setVideoTranscodeStatus(null);
+    setVideoTranscodeQueueStatus(null);
     if (view !== "videos" || !selectedVideo || selectedVideo.playbackMode !== "hls") {
       return;
     }
@@ -659,11 +661,15 @@ export function App() {
 
     const poll = async () => {
       try {
-        const nextStatus = await api.videoTranscodeStatus(selectedVideo.id);
+        const [nextStatus, nextQueueStatus] = await Promise.all([
+          api.videoTranscodeStatus(selectedVideo.id),
+          api.videoTranscodeQueueStatus(),
+        ]);
         if (cancelled) return;
         const previousStatus = previousVideoTranscodeStatus.current;
         previousVideoTranscodeStatus.current = nextStatus.status;
         setVideoTranscodeStatus(nextStatus);
+        setVideoTranscodeQueueStatus(nextQueueStatus);
         if (nextStatus.status === "ready" && previousStatus && previousStatus !== "ready") {
           setVideoPlaybackReloadKey((key) => key + 1);
         }
@@ -1427,6 +1433,7 @@ export function App() {
               <div>
                 <h1>{t.videoShelf}</h1>
                 <small>{videoCatalogLoading && videoCatalog.length === 0 ? t.loadingVideos : t.catalogLoadedCount(videoCatalog.length, videoCatalogTotal)}</small>
+                <span>{t.videoCoverHint}</span>
               </div>
             </div>
             {selectedVideo && (
@@ -1451,6 +1458,11 @@ export function App() {
                     <small className="videoTranscodeHint">
                       {selectedVideo.playbackReason || t.videoTranscodeHint}
                     </small>
+                    {videoTranscodeQueueStatus?.activeVideoId && videoTranscodeQueueStatus.activeVideoId !== selectedVideo.id && (
+                      <small className="videoTranscodeHint">
+                        {t.videoCurrentTranscode(videoTranscodeQueueStatus.activeTitle || `#${videoTranscodeQueueStatus.activeVideoId}`)}
+                      </small>
+                    )}
                     <button type="button" onClick={() => setVideoPlaybackReloadKey((key) => key + 1)}>
                       {t.videoReloadPlayback}
                     </button>
@@ -2629,7 +2641,7 @@ type Translation = typeof translations.en;
 const translations = {
   zh: {
     language: "语言",
-    library: "书库",
+    library: "首页",
     reader: "阅读器",
     jobs: "任务",
     errors: "错误",
@@ -2654,9 +2666,11 @@ const translations = {
     gameCatalogSubtitle: "按机种排序的完整游戏列表",
     videoShelf: "视频库",
     videoShelfSubtitle: "本地视频文件与空间媒体入口",
+    videoCoverHint: "自定义封面可放在视频同目录：同名 .jpg/.png，或 poster.jpg / cover.jpg。",
     videoTranscodeHint: "该视频会按需转码为 HLS 播放，首次打开可能需要等待几秒。",
     videoTranscodeStatusFailed: "转码状态读取失败",
     videoTranscodeSegments: (count: number) => `${count} 个片段`,
+    videoCurrentTranscode: (title: string) => `当前正在转码：${title}`,
     videoReloadPlayback: "重新加载播放",
     videoTranscodeStatusLabels: {
       idle: "等待转码",
@@ -2774,7 +2788,7 @@ const translations = {
   },
   zht: {
     language: "語言",
-    library: "書庫",
+    library: "首頁",
     reader: "閱讀器",
     jobs: "任務",
     errors: "錯誤",
@@ -2799,9 +2813,11 @@ const translations = {
     gameCatalogSubtitle: "依機種排序的完整遊戲列表",
     videoShelf: "影片庫",
     videoShelfSubtitle: "本地影片檔與空間媒體入口",
+    videoCoverHint: "自訂封面可放在影片同目錄：同名 .jpg/.png，或 poster.jpg / cover.jpg。",
     videoTranscodeHint: "此影片會按需轉碼為 HLS 播放，首次開啟可能需要等待幾秒。",
     videoTranscodeStatusFailed: "轉碼狀態讀取失敗",
     videoTranscodeSegments: (count: number) => `${count} 個片段`,
+    videoCurrentTranscode: (title: string) => `目前正在轉碼：${title}`,
     videoReloadPlayback: "重新載入播放",
     videoTranscodeStatusLabels: {
       idle: "等待轉碼",
@@ -2919,7 +2935,7 @@ const translations = {
   },
   en: {
     language: "Language",
-    library: "Library",
+    library: "Home",
     reader: "Reader",
     jobs: "Jobs",
     errors: "Errors",
@@ -2944,9 +2960,11 @@ const translations = {
     gameCatalogSubtitle: "Full game catalog grouped by platform",
     videoShelf: "Video Shelf",
     videoShelfSubtitle: "Local video files and spatial media entry points",
+    videoCoverHint: "Custom covers can sit next to the video as matching .jpg/.png, poster.jpg, or cover.jpg.",
     videoTranscodeHint: "This video will be transcoded to HLS on demand. First playback may take a few seconds.",
     videoTranscodeStatusFailed: "Failed to read transcode status",
     videoTranscodeSegments: (count: number) => `${count} segments`,
+    videoCurrentTranscode: (title: string) => `Currently transcoding: ${title}`,
     videoReloadPlayback: "Reload playback",
     videoTranscodeStatusLabels: {
       idle: "Waiting to transcode",
@@ -3064,7 +3082,7 @@ const translations = {
   },
   ja: {
     language: "言語",
-    library: "ライブラリ",
+    library: "ホーム",
     reader: "リーダー",
     jobs: "ジョブ",
     errors: "エラー",
@@ -3089,9 +3107,11 @@ const translations = {
     gameCatalogSubtitle: "プラットフォーム順のゲーム一覧",
     videoShelf: "ビデオ棚",
     videoShelfSubtitle: "ローカル動画と空間メディアの入口",
+    videoCoverHint: "カスタムカバーは動画と同じフォルダに同名 .jpg/.png、poster.jpg、cover.jpg として置けます。",
     videoTranscodeHint: "このビデオは必要に応じて HLS に変換されます。初回再生には数秒かかる場合があります。",
     videoTranscodeStatusFailed: "変換状態の取得に失敗しました",
     videoTranscodeSegments: (count: number) => `${count} セグメント`,
+    videoCurrentTranscode: (title: string) => `現在変換中：${title}`,
     videoReloadPlayback: "再読み込み",
     videoTranscodeStatusLabels: {
       idle: "変換待ち",
@@ -3209,7 +3229,7 @@ const translations = {
   },
   ko: {
     language: "언어",
-    library: "라이브러리",
+    library: "홈",
     reader: "리더",
     jobs: "작업",
     errors: "오류",
@@ -3234,9 +3254,11 @@ const translations = {
     gameCatalogSubtitle: "플랫폼별 전체 게임 목록",
     videoShelf: "비디오 선반",
     videoShelfSubtitle: "로컬 비디오 파일과 공간 미디어 진입점",
+    videoCoverHint: "사용자 지정 표지는 비디오와 같은 폴더에 같은 이름의 .jpg/.png, poster.jpg, cover.jpg로 둘 수 있습니다.",
     videoTranscodeHint: "이 비디오는 필요할 때 HLS로 변환됩니다. 처음 재생할 때 몇 초 걸릴 수 있습니다.",
     videoTranscodeStatusFailed: "변환 상태를 읽지 못했습니다",
     videoTranscodeSegments: (count: number) => `${count}개 세그먼트`,
+    videoCurrentTranscode: (title: string) => `현재 변환 중: ${title}`,
     videoReloadPlayback: "재생 다시 불러오기",
     videoTranscodeStatusLabels: {
       idle: "변환 대기",

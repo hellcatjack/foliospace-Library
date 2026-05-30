@@ -1032,8 +1032,13 @@ h1 {
   padding: 16px 18px;
 }
 
+.catalogHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
 .catalogHeader h1 {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .catalogHeader small,

@@ -113,6 +113,7 @@ Open the manifest for book 12 and tell me whether it is EPUB or CBZ.
 - `foliospace.list_videos`: list paginated client-safe video assets with `limit`, `offset`, `q`, `format`, and `sort`.
 - `foliospace.open_video_manifest`: open a video client manifest by `videoId`; the returned `fileUrl` is an opaque Range-capable service URL, while `hlsUrl` is used when `playbackMode` is `hls`.
 - `foliospace.get_video_transcode_status`: read HLS transcode/cache status for a video; returns `idle`, `starting`, `running`, `queued`, `ready`, or `failed`.
+- `foliospace.get_video_transcode_queue`: read the current active global video transcode task, if any.
 - `foliospace.get_preferences`: read client preferences such as interface language.
 - `foliospace.save_preferences`: save client preferences.
 - `foliospace.get_scan_settings`: read scan runtime settings such as worker count.
@@ -185,6 +186,12 @@ Check HLS transcode status:
 
 ```json
 {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"foliospace.get_video_transcode_status","arguments":{"videoId":21}}}
+```
+
+Check which video is occupying the transcode slot:
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"foliospace.get_video_transcode_queue","arguments":{}}}
 ```
 
 List want-to-read books:

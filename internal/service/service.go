@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,11 +42,25 @@ var videoTranscodeState = struct {
 	dir     string
 }{}
 
+var videoThumbnailState = struct {
+	sync.Mutex
+	cond   *sync.Cond
+	active bool
+}{}
+
 type VideoTranscodeStatus struct {
 	VideoID      int64  `json:"videoId"`
 	Status       string `json:"status"`
 	Message      string `json:"message,omitempty"`
 	SegmentCount int    `json:"segmentCount"`
+}
+
+type VideoTranscodeQueueStatus struct {
+	Status        string `json:"status"`
+	ActiveVideoID int64  `json:"activeVideoId,omitempty"`
+	ActiveTitle   string `json:"activeTitle,omitempty"`
+	SegmentCount  int    `json:"segmentCount"`
+	Message       string `json:"message,omitempty"`
 }
 
 func IsVideoTranscodeBusy(err error) bool {
@@ -503,6 +518,46 @@ func (s *Service) Video(id int64) (domain.VideoAsset, error) {
 	return s.store.VideoByID(id)
 }
 
+func (s *Service) OpenVideoThumbnail(id int64) (PageStream, error) {
+	video, err := s.store.VideoByID(id)
+	if err != nil {
+		return PageStream{}, err
+	}
+	if video.FilePath == "" {
+		return PageStream{}, fmt.Errorf("video has no indexed file")
+	}
+	for _, candidate := range localVideoThumbnailCandidates(video.FilePath) {
+		if file, contentType, err := openImageFile(candidate); err == nil {
+			return PageStream{Body: file, ContentType: contentType}, nil
+		}
+	}
+	cachePath, err := s.videoThumbnailCachePath(video)
+	if err != nil {
+		return PageStream{}, err
+	}
+	if file, err := os.Open(cachePath); err == nil {
+		return PageStream{Body: file, ContentType: "image/jpeg"}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if !claimVideoThumbnail(ctx) {
+		return PageStream{}, fmt.Errorf("video thumbnail extraction is busy")
+	}
+	defer releaseVideoThumbnail()
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		return PageStream{}, err
+	}
+	if err := extractVideoThumbnail(video.FilePath, cachePath, video.DurationSeconds); err != nil {
+		_ = os.Remove(cachePath)
+		return PageStream{}, err
+	}
+	file, err := os.Open(cachePath)
+	if err != nil {
+		return PageStream{}, err
+	}
+	return PageStream{Body: file, ContentType: "image/jpeg"}, nil
+}
+
 func (s *Service) OpenGameCover(id int64) (PageStream, error) {
 	game, err := s.store.GameByID(id)
 	if err != nil {
@@ -540,6 +595,16 @@ func (s *Service) gameCoverCachePath(id int64) (string, error) {
 		base = filepath.Join(os.TempDir(), "foliospace-reader")
 	}
 	return filepath.Join(base, "cache", "game-covers", fmt.Sprintf("%d.png", id)), nil
+}
+
+func (s *Service) videoThumbnailCachePath(video domain.VideoAsset) (string, error) {
+	base := s.configDir
+	if base == "" {
+		base = filepath.Join(os.TempDir(), "foliospace-reader")
+	}
+	keySource := fmt.Sprintf("%d|%s|%d|%s", video.ID, video.FilePath, video.Size, video.MTime.Format(time.RFC3339Nano))
+	sum := sha256.Sum256([]byte(keySource))
+	return filepath.Join(base, "cache", "video-thumbnails", fmt.Sprintf("%d-%s.jpg", video.ID, hex.EncodeToString(sum[:])[:12])), nil
 }
 
 func (s *Service) OpenGameFile(id int64) (PageStream, error) {
@@ -650,6 +715,24 @@ func (s *Service) VideoTranscodeStatus(id int64) (VideoTranscodeStatus, error) {
 	return status, nil
 }
 
+func (s *Service) VideoTranscodeQueueStatus() (VideoTranscodeQueueStatus, error) {
+	videoID, dir := activeVideoTranscode()
+	if videoID == 0 || dir == "" {
+		return VideoTranscodeQueueStatus{Status: "idle", Message: "No active video transcode"}, nil
+	}
+	status := VideoTranscodeQueueStatus{
+		Status:        "running",
+		ActiveVideoID: videoID,
+		SegmentCount:  countHLSSegments(dir),
+		Message:       "Transcoding to browser-compatible HLS",
+	}
+	video, err := s.store.VideoByID(videoID)
+	if err == nil {
+		status.ActiveTitle = video.Title
+	}
+	return status, nil
+}
+
 func (s *Service) VideoHLSFilePath(id int64, name string) (string, error) {
 	video, err := s.store.VideoByID(id)
 	if err != nil {
@@ -749,6 +832,12 @@ func otherVideoTranscodeActive() bool {
 	videoTranscodeState.Lock()
 	defer videoTranscodeState.Unlock()
 	return videoTranscodeState.dir != ""
+}
+
+func activeVideoTranscode() (int64, string) {
+	videoTranscodeState.Lock()
+	defer videoTranscodeState.Unlock()
+	return videoTranscodeState.videoID, videoTranscodeState.dir
 }
 
 func countHLSSegments(dir string) int {
@@ -875,6 +964,138 @@ func downloadGameCover(sourceURL string, cachePath string) error {
 		return closeErr
 	}
 	return os.Rename(tmpPath, cachePath)
+}
+
+func localVideoThumbnailCandidates(videoPath string) []string {
+	dir := filepath.Dir(videoPath)
+	ext := filepath.Ext(videoPath)
+	base := strings.TrimSuffix(filepath.Base(videoPath), ext)
+	names := []string{
+		base + ".jpg",
+		base + ".jpeg",
+		base + ".png",
+		base + ".webp",
+		base + ".poster.jpg",
+		base + ".poster.jpeg",
+		base + ".poster.png",
+		base + ".cover.jpg",
+		base + ".cover.jpeg",
+		base + ".cover.png",
+		"poster.jpg",
+		"poster.jpeg",
+		"poster.png",
+		"cover.jpg",
+		"cover.jpeg",
+		"cover.png",
+	}
+	candidates := make([]string, 0, len(names))
+	seen := map[string]bool{}
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		if !seen[path] {
+			seen[path] = true
+			candidates = append(candidates, path)
+		}
+	}
+	return candidates
+}
+
+func openImageFile(path string) (*os.File, string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, "", err
+	}
+	header := make([]byte, 512)
+	n, readErr := file.Read(header)
+	if readErr != nil && readErr != io.EOF {
+		_ = file.Close()
+		return nil, "", readErr
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		_ = file.Close()
+		return nil, "", err
+	}
+	contentType := http.DetectContentType(header[:n])
+	if !strings.HasPrefix(contentType, "image/") {
+		_ = file.Close()
+		return nil, "", fmt.Errorf("%s is not an image", path)
+	}
+	return file, contentType, nil
+}
+
+func extractVideoThumbnail(inputPath string, outputPath string, durationSeconds float64) error {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return fmt.Errorf("ffmpeg is not installed")
+	}
+	seekSeconds := 60
+	if durationSeconds > 0 {
+		seekSeconds = int(durationSeconds * 0.1)
+		if seekSeconds < 10 {
+			seekSeconds = 10
+		}
+		if seekSeconds > 300 {
+			seekSeconds = 300
+		}
+	}
+	tmpPath := outputPath + ".tmp.jpg"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	args := []string{
+		"-hide_banner", "-nostdin", "-y",
+		"-ss", strconv.Itoa(seekSeconds),
+		"-i", inputPath,
+		"-frames:v", "1",
+		"-vf", "scale=w=640:h=-2",
+		"-q:v", "4",
+		tmpPath,
+	}
+	output, err := exec.CommandContext(ctx, "ffmpeg", args...).CombinedOutput()
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("ffmpeg thumbnail failed: %s", strings.TrimSpace(string(output)))
+	}
+	return os.Rename(tmpPath, outputPath)
+}
+
+func claimVideoThumbnail(ctx context.Context) bool {
+	videoThumbnailState.Lock()
+	defer videoThumbnailState.Unlock()
+	if videoThumbnailState.cond == nil {
+		videoThumbnailState.cond = sync.NewCond(&videoThumbnailState.Mutex)
+	}
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			videoThumbnailState.Lock()
+			videoThumbnailState.cond.Broadcast()
+			videoThumbnailState.Unlock()
+		case <-done:
+		}
+	}()
+	defer close(done)
+	if videoThumbnailState.active {
+		for videoThumbnailState.active && ctx.Err() == nil {
+			videoThumbnailState.cond.Wait()
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+	}
+	videoThumbnailState.active = true
+	return true
+}
+
+func releaseVideoThumbnail() {
+	videoThumbnailState.Lock()
+	defer videoThumbnailState.Unlock()
+	videoThumbnailState.active = false
+	if videoThumbnailState.cond != nil {
+		videoThumbnailState.cond.Broadcast()
+	}
 }
 
 func (s *Service) Book(id int64) (domain.Book, error) {

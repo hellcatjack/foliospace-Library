@@ -453,9 +453,25 @@ Returns the current HLS cache/transcode state for a video.
 
 `status` is one of `idle`, `starting`, `running`, `queued`, `ready`, or `failed`. Clients can poll this endpoint while opening HLS playback to show `转码中`, `已缓存`, or a failure state. If another video is already being transcoded, the manifest request can return `409` and this endpoint reports `queued`.
 
+### `GET /api/client/videos/transcode/status`
+
+Returns the active global HLS transcode task. Use this when a selected video reports `queued` and the client wants to show which video is currently occupying the single NAS-friendly transcode slot.
+
+```json
+{
+  "status": "running",
+  "activeVideoId": 88,
+  "activeTitle": "Demo 4K HEVC Movie",
+  "segmentCount": 12,
+  "message": "Transcoding to browser-compatible HLS"
+}
+```
+
+If nothing is currently transcoding, `status` is `idle`.
+
 ### `GET /api/videos/{videoId}/thumbnail`
 
-Returns an SVG placeholder thumbnail in the first implementation. A future media metadata pass can replace this with extracted thumbnails without changing the client DTO shape.
+Returns the best available video thumbnail without exposing the NAS path. FolioSpace first looks for local sidecar images next to the video, including `Movie.jpg`, `Movie.poster.jpg`, `Movie.cover.jpg`, `poster.jpg`, and `cover.jpg`. If no local image exists, it extracts a cached JPEG frame with `ffmpeg` into `/config/cache/video-thumbnails`. If extraction is busy or unavailable, it falls back to the built-in SVG placeholder.
 
 ### `GET /api/client/books/{bookId}/manifest`
 

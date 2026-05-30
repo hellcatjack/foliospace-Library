@@ -439,6 +439,11 @@ func (s *Server) handleClientVideoAction(w http.ResponseWriter, r *http.Request)
 	if !s.authorizeClient(w, r) {
 		return
 	}
+	if r.URL.Path == "/api/client/videos/transcode/status" && r.Method == http.MethodGet {
+		status, err := s.service.VideoTranscodeQueueStatus()
+		writeJSONOrError(w, status, err)
+		return
+	}
 	id, tail, ok := parseIDTail(r.URL.Path, "/api/client/videos/")
 	if !ok {
 		http.NotFound(w, r)
@@ -923,8 +928,15 @@ func (s *Server) streamVideoThumbnail(w http.ResponseWriter, videoID int64) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	if stream, err := s.service.OpenVideoThumbnail(videoID); err == nil {
+		defer stream.Body.Close()
+		w.Header().Set("Content-Type", stream.ContentType)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = io.Copy(w, stream.Body)
+		return
+	}
 	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.WriteString(w, videoThumbnailPlaceholder(video))
 }
 
@@ -1562,7 +1574,7 @@ func clientVideoItem(video domain.VideoAsset) clientVideo {
 		VideoCodec:         video.VideoCodec,
 		AudioCodec:         video.AudioCodec,
 		ThumbnailStatus:    video.ThumbnailStatus,
-		ThumbnailURL:       fmt.Sprintf("/api/videos/%d/thumbnail", video.ID),
+		ThumbnailURL:       fmt.Sprintf("/api/videos/%d/thumbnail?v=%d", video.ID, video.MTime.UnixNano()),
 		ManifestURL:        fmt.Sprintf("/api/client/videos/%d/manifest", video.ID),
 		DirectPlayable:     video.DirectPlayable,
 		PlaybackMode:       video.PlaybackMode,

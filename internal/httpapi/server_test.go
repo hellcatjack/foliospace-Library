@@ -493,6 +493,10 @@ func TestAPIClientVideosPage(t *testing.T) {
 	if !strings.Contains(betaStatus, `"status":"idle"`) || !strings.Contains(betaStatus, `"segmentCount":0`) {
 		t.Fatalf("beta video transcode status = %q, want idle status", betaStatus)
 	}
+	queueStatus := authGet(t, ts.URL+"/api/client/videos/transcode/status", "secret")
+	if !strings.Contains(queueStatus, `"status":"idle"`) || !strings.Contains(queueStatus, `"segmentCount":0`) {
+		t.Fatalf("video transcode queue status = %q, want idle status", queueStatus)
+	}
 }
 
 func TestAPISearchAndPrivateState(t *testing.T) {

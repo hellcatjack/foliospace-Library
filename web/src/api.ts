@@ -105,6 +105,14 @@ export type VideoTranscodeStatus = {
   segmentCount: number;
 };
 
+export type VideoTranscodeQueueStatus = {
+  status: "idle" | "running";
+  activeVideoId?: number;
+  activeTitle?: string;
+  segmentCount: number;
+  message?: string;
+};
+
 export type SearchResponse = {
   query: string;
   books: Book[];
@@ -371,6 +379,7 @@ export const api = {
     return request<VideoListPage>(`/api/client/videos?${params.toString()}`);
   },
   videoTranscodeStatus: (videoId: number) => request<VideoTranscodeStatus>(`/api/client/videos/${videoId}/transcode/status`),
+  videoTranscodeQueueStatus: () => request<VideoTranscodeQueueStatus>("/api/client/videos/transcode/status"),
   favoriteBooks: () => request<Book[]>("/api/books/favorites?limit=12"),
   privateStatusBooks: (status: string) => request<Book[]>(`/api/books/private-status/${encodeURIComponent(status)}?limit=12`),
   search: (q: string, limit = 12) =>
