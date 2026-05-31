@@ -317,6 +317,96 @@ button:hover {
   grid-column: 1 / -1;
 }
 
+.aboutPage {
+  display: grid;
+  gap: 20px;
+  max-width: 920px;
+  margin: 16px;
+}
+
+.aboutHero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid #eef2f3;
+  padding-bottom: 18px;
+}
+
+.aboutHero h1 {
+  margin-bottom: 4px;
+  font-size: 24px;
+}
+
+.aboutHero p {
+  margin: 0;
+  color: #647177;
+}
+
+.aboutMark {
+  display: grid;
+  flex: 0 0 58px;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  background: #1f2a2e;
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.aboutGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.aboutGrid > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e2e8eb;
+  border-radius: 8px;
+  background: #f8fbfc;
+  padding: 14px;
+}
+
+.aboutGrid span,
+.aboutSection h2 {
+  color: #647177;
+  font-size: 13px;
+}
+
+.aboutGrid strong {
+  overflow-wrap: anywhere;
+}
+
+.aboutSection {
+  display: grid;
+  gap: 10px;
+}
+
+.aboutSection h2 {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.formatChips,
+.capabilityList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.formatChips span,
+.capabilityList span {
+  border: 1px solid #d9e0e3;
+  border-radius: 999px;
+  background: #f7fafb;
+  color: #304247;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
 .libraryDirectory {
   grid-column: 1 / -1;
   display: grid;
@@ -2067,6 +2157,19 @@ button.danger:hover {
   .grid,
   .libraryDashboard {
     grid-template-columns: 1fr;
+  }
+
+  .aboutPage {
+    margin: 12px;
+  }
+
+  .aboutHero,
+  .aboutGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .aboutHero {
+    align-items: flex-start;
   }
 
   .collectionPanel {

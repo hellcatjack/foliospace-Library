@@ -3,11 +3,11 @@ import type { FormEvent, MouseEvent, ReactNode, TouchEvent } from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.mjs?url";
-import { api, Book, BookPrivateState, clearAuthToken, ClientPreferences, DirectoryEntry, DirectoryListing, EpubManifest, FileError, GameAsset, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken, SetupStatus, ScanSettings, VideoAsset, VideoTranscodeQueueStatus, VideoTranscodeStatus } from "./api";
+import { api, Book, BookPrivateState, clearAuthToken, ClientInfo, ClientPreferences, DirectoryEntry, DirectoryListing, EpubManifest, FileError, GameAsset, getAuthToken, JobEvent, Library, Page, ScanJob, Series, setAuthToken, SetupStatus, ScanSettings, VideoAsset, VideoTranscodeQueueStatus, VideoTranscodeStatus } from "./api";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 
-type View = "library" | "reader" | "games" | "videos" | "jobs" | "errors";
+type View = "library" | "reader" | "games" | "videos" | "jobs" | "errors" | "about";
 type ReaderPageMode = "single" | "double" | "webtoon";
 type EpubPageMode = "single" | "double";
 type EpubTheme = "light" | "sepia" | "dark";
@@ -37,6 +37,7 @@ export function App() {
   const [videoCatalogHasMore, setVideoCatalogHasMore] = useState(false);
   const [gameCatalogLoading, setGameCatalogLoading] = useState(false);
   const [videoCatalogLoading, setVideoCatalogLoading] = useState(false);
+  const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<VideoAsset | null>(null);
   const [videoTranscodeStatus, setVideoTranscodeStatus] = useState<VideoTranscodeStatus | null>(null);
   const [videoTranscodeQueueStatus, setVideoTranscodeQueueStatus] = useState<VideoTranscodeQueueStatus | null>(null);
@@ -130,8 +131,9 @@ export function App() {
     if (showProgress) {
       setActiveTask("Refreshing library");
     }
-    const [preferences, nextScanSettings, nextLibraries, nextSeries, nextJobs, nextErrors, nextContinueBooks, nextRecentBooks, nextFavoriteBooks, nextWantBooks, nextGameShelf, nextVideoShelf] = await Promise.all([
+    const [preferences, info, nextScanSettings, nextLibraries, nextSeries, nextJobs, nextErrors, nextContinueBooks, nextRecentBooks, nextFavoriteBooks, nextWantBooks, nextGameShelf, nextVideoShelf] = await Promise.all([
       api.clientPreferences(),
+      api.clientInfo(),
       api.scanSettings(),
       api.libraries(),
       api.series(),
@@ -146,6 +148,7 @@ export function App() {
     ]);
     applyClientPreferences(preferences);
     preferencesLoaded.current = true;
+    setClientInfo(info);
     setScanSettings(nextScanSettings);
     setScanWorkerDraft(nextScanSettings.scanWorkers);
     setLibraries(arrayOrEmpty(nextLibraries));
@@ -1170,6 +1173,9 @@ export function App() {
         <button className={view === "errors" ? "active" : ""} onClick={() => setView("errors")}>
           {t.errors}
         </button>
+        <button className={view === "about" ? "active" : ""} onClick={() => setView("about")}>
+          {t.about}
+        </button>
         {authEnabled && !authRequired && (
           <button className="lockButton" onClick={lockApp}>
             {t.lock}
@@ -1581,6 +1587,51 @@ export function App() {
                 </button>
               )}
             </div>
+          </section>
+        )}
+
+        {view === "about" && (
+          <section className="aboutPage panel">
+            <div className="aboutHero">
+              <span className="aboutMark">FS</span>
+              <div>
+                <h1>{clientInfo?.serviceName || "FolioSpace Library"}</h1>
+                <p>{t.aboutSubtitle}</p>
+              </div>
+            </div>
+            <div className="aboutGrid">
+              <div>
+                <span>{t.version}</span>
+                <strong>{clientInfo?.serviceVersion || "0.881"}</strong>
+              </div>
+              <div>
+                <span>{t.apiVersion}</span>
+                <strong>{clientInfo?.apiVersion || "v1"}</strong>
+              </div>
+              <div>
+                <span>{t.copyright}</span>
+                <strong>Copyright © 2026 funland co.,Ltd.</strong>
+              </div>
+            </div>
+            <section className="aboutSection">
+              <h2>{t.supportedFormats}</h2>
+              <div className="formatChips">
+                {(clientInfo?.supportedFormats || ["cbz", "zip", "epub", "pdf", "mp4", "mkv"]).map((format) => (
+                  <span key={format}>{format.toUpperCase()}</span>
+                ))}
+              </div>
+            </section>
+            <section className="aboutSection">
+              <h2>{t.capabilities}</h2>
+              <div className="capabilityList">
+                {Object.entries(clientInfo?.capabilities || {})
+                  .filter(([, enabled]) => enabled)
+                  .slice(0, 18)
+                  .map(([name]) => (
+                    <span key={name}>{formatCapabilityName(name)}</span>
+                  ))}
+              </div>
+            </section>
           </section>
         )}
 
@@ -2772,6 +2823,13 @@ const translations = {
     reader: "阅读器",
     jobs: "任务",
     errors: "错误",
+    about: "关于",
+    aboutSubtitle: "个人数字资产库与客户端服务层。",
+    version: "版本号",
+    apiVersion: "API 版本",
+    copyright: "版权信息",
+    supportedFormats: "支持格式",
+    capabilities: "服务能力",
     elapsed: "耗时",
     lock: "锁定",
     searchLibrary: "搜索书库",
@@ -2920,6 +2978,13 @@ const translations = {
     reader: "閱讀器",
     jobs: "任務",
     errors: "錯誤",
+    about: "關於",
+    aboutSubtitle: "個人數位資產庫與客戶端服務層。",
+    version: "版本號",
+    apiVersion: "API 版本",
+    copyright: "版權資訊",
+    supportedFormats: "支援格式",
+    capabilities: "服務能力",
     elapsed: "耗時",
     lock: "鎖定",
     searchLibrary: "搜尋書庫",
@@ -3068,6 +3133,13 @@ const translations = {
     reader: "Reader",
     jobs: "Jobs",
     errors: "Errors",
+    about: "About",
+    aboutSubtitle: "Personal digital asset library and client service layer.",
+    version: "Version",
+    apiVersion: "API Version",
+    copyright: "Copyright",
+    supportedFormats: "Supported Formats",
+    capabilities: "Capabilities",
     elapsed: "Elapsed",
     lock: "Lock",
     searchLibrary: "Search library",
@@ -3216,6 +3288,13 @@ const translations = {
     reader: "リーダー",
     jobs: "ジョブ",
     errors: "エラー",
+    about: "情報",
+    aboutSubtitle: "個人向けデジタル資産ライブラリとクライアントサービス層。",
+    version: "バージョン",
+    apiVersion: "API バージョン",
+    copyright: "著作権",
+    supportedFormats: "対応形式",
+    capabilities: "機能",
     elapsed: "経過",
     lock: "ロック",
     searchLibrary: "ライブラリを検索",
@@ -3364,6 +3443,13 @@ const translations = {
     reader: "리더",
     jobs: "작업",
     errors: "오류",
+    about: "정보",
+    aboutSubtitle: "개인 디지털 자산 라이브러리와 클라이언트 서비스 계층.",
+    version: "버전",
+    apiVersion: "API 버전",
+    copyright: "저작권",
+    supportedFormats: "지원 형식",
+    capabilities: "기능",
     elapsed: "경과",
     lock: "잠금",
     searchLibrary: "라이브러리 검색",
@@ -3530,6 +3616,13 @@ function writeLocalPreferences(preferences: ClientPreferences) {
 function clampScanWorkers(value: number) {
   if (!Number.isFinite(value)) return 1;
   return Math.max(1, Math.min(8, Math.round(value)));
+}
+
+function formatCapabilityName(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function readerTotalPages(book: Book, archivePages: number, pdfPages: number) {

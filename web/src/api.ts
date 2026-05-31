@@ -250,6 +250,14 @@ export type SetupStatus = {
   scanWorkers: number;
 };
 
+export type ClientInfo = {
+  serviceName: string;
+  serviceVersion: string;
+  apiVersion: string;
+  supportedFormats: string[];
+  capabilities: Record<string, boolean>;
+};
+
 export type SetupInput = {
   token: string;
   name: string;
@@ -335,6 +343,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(preferences),
     }),
+  clientInfo: () => request<ClientInfo>("/api/client/info"),
   libraries: () => request<Library[]>("/api/libraries"),
   createLibrary: (name: string, rootPath: string, assetType = "mixed") =>
     request<Library>("/api/libraries", {

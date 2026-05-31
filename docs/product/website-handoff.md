@@ -25,13 +25,13 @@ FolioSpaceReader
 Docker image:
 
 ```text
-funland/foliospace-library:0.88
+funland/foliospace-library:0.881
 ```
 
 Current public Docker tags:
 
 ```text
-funland/foliospace-library:0.88
+funland/foliospace-library:0.881
 funland/foliospace-library:latest
 ```
 
@@ -44,7 +44,7 @@ foliospace-library
 Current release:
 
 ```text
-0.88
+0.881
 ```
 
 ## One-Line Description
@@ -247,7 +247,7 @@ Suggested home-page sections:
 Primary Docker command:
 
 ```bash
-docker pull funland/foliospace-library:0.88
+docker pull funland/foliospace-library:0.881
 ```
 
 Simple NAS run example:
@@ -263,7 +263,7 @@ docker run -d \
   -v /volume2/GameROMS:/games:ro \
   -v /volume2/MovieCollection/Movies:/videos:ro \
   -e FOLIOSPACE_DIRECTORY_ROOTS=/library,/books,/games,/videos \
-  funland/foliospace-library:0.88
+  funland/foliospace-library:0.881
 ```
 
 Open:
@@ -285,7 +285,7 @@ Reference compose:
 ```yaml
 services:
   foliospace-library:
-    image: funland/foliospace-library:0.88
+    image: funland/foliospace-library:0.881
     ports:
       - "8080:8080"
     volumes:
@@ -476,10 +476,10 @@ Release package placeholders to publish on the website:
 
 ```text
 /install-mcp.sh
-/releases/foliospace-mcp_0.88_darwin_arm64.tar.gz
-/releases/foliospace-mcp_0.88_darwin_amd64.tar.gz
-/releases/foliospace-mcp_0.88_linux_arm64.tar.gz
-/releases/foliospace-mcp_0.88_linux_amd64.tar.gz
+/releases/foliospace-mcp_0.881_darwin_arm64.tar.gz
+/releases/foliospace-mcp_0.881_darwin_amd64.tar.gz
+/releases/foliospace-mcp_0.881_linux_arm64.tar.gz
+/releases/foliospace-mcp_0.881_linux_amd64.tar.gz
 /releases/checksums.txt
 ```
 
@@ -488,16 +488,16 @@ Current local release artifact source for the website build:
 ```text
 /Users/deadseafu/Documents/FolioSpaceReader/dist/install-mcp.sh
 /Users/deadseafu/Documents/FolioSpaceReader/dist/releases/checksums.txt
-/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.88_darwin_arm64.tar.gz
-/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.88_darwin_amd64.tar.gz
-/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.88_linux_arm64.tar.gz
-/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.88_linux_amd64.tar.gz
+/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.881_darwin_arm64.tar.gz
+/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.881_darwin_amd64.tar.gz
+/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.881_linux_arm64.tar.gz
+/Users/deadseafu/Documents/FolioSpaceReader/dist/releases/foliospace-mcp_0.881_linux_amd64.tar.gz
 ```
 
 Maintainer build command:
 
 ```bash
-VERSION=0.88 ./scripts/build-mcp-release.sh
+VERSION=0.881 ./scripts/build-mcp-release.sh
 ```
 
 Environment:
@@ -620,7 +620,7 @@ Use placeholder blocks until production screenshots are captured. Recommended fi
 | `screenshots/scan-jobs.png` | Scan job list with elapsed time, progress, pause, cancel, and resume controls. | Show transparent scanning. |
 | `screenshots/errors.png` | Structured file error list with reason and path context. | Show diagnostics. |
 | `screenshots/game-shelf.png` | Game shelf grouped by platform with covers and Now Printing placeholders. | Show ROM library direction. |
-| `screenshots/video-library.png` | Video library with custom thumbnails, placeholders, and playback mode labels. | Show 0.88 video catalog. |
+| `screenshots/video-library.png` | Video library with custom thumbnails, placeholders, and playback mode labels. | Show 0.881 video catalog. |
 | `screenshots/video-player-hls.png` | Video player showing HLS transcode status and queue messaging. | Show lightweight playback bridge. |
 | `screenshots/api-mcp.png` | Developer page showing API and MCP examples. | Optional docs visual. |
 
@@ -699,23 +699,20 @@ FolioSpace Library is designed for self-hosted local libraries. Client APIs retu
 Docker Hub image:
 
 ```text
-funland/foliospace-library:0.88
+funland/foliospace-library:0.881
 funland/foliospace-library:latest
 ```
 
 Current Docker Hub digest:
 
 ```text
-0.88 manifest: sha256:5103cb56177ea481f000c72e0c180d135e0956295295a6d384379dbcc2be5e24
-amd64:         sha256:80a9d88c397711f3296f0dd307aadb668eacb1efa2944daf14dcf557e098ca62
-arm64:         sha256:b18cae5dde2e35e36014639000defb69711b4f5ba6dd6ae5773112da65ade658
+0.881 amd64 manifest: sha256:e7c13ce3525caa8a57dbd9c463144242130263df3496a6b63047f4234fe521e8
 ```
 
 Architectures:
 
 ```text
 linux/amd64
-linux/arm64
 ```
 
 Service version returned by API:
@@ -723,7 +720,7 @@ Service version returned by API:
 ```json
 {
   "serviceName": "FolioSpace Library",
-  "serviceVersion": "0.88",
+  "serviceVersion": "0.881",
   "apiVersion": "v1"
 }
 ```
@@ -737,4 +734,4 @@ These should be confirmed before publishing:
 - Final feedback channel.
 - Whether API docs are rendered from Markdown directly or rewritten as website pages.
 - Whether screenshots are real captures or designed placeholders for the first launch.
-- Whether Docker Hub is the only public distribution channel for 0.88.
+- Whether Docker Hub is the only public distribution channel for 0.881.
