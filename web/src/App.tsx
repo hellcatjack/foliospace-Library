@@ -1075,6 +1075,18 @@ export function App() {
     setReaderPage(selectedBook, index);
   }
 
+  async function returnToLibrary() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? `Fullscreen unavailable: ${error.message}` : "Fullscreen unavailable");
+    } finally {
+      setView("library");
+    }
+  }
+
   async function toggleReaderFullscreen() {
     if (!readerRef.current) return;
     try {
@@ -1155,7 +1167,7 @@ export function App() {
     <main className="app">
       <aside className="sidebar">
         <div className="brand">FolioSpace Library</div>
-        <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>
+        <button className={view === "library" ? "active" : ""} onClick={returnToLibrary}>
           {t.library}
         </button>
         <button className={view === "reader" ? "active" : ""} onClick={() => setView("reader")}>
@@ -1653,6 +1665,7 @@ export function App() {
                     </span>
                   </div>
                   <div className="readerToolbar" aria-label="Reader options">
+                    <button onClick={returnToLibrary}>{t.backToShelf}</button>
                     {selectedBook.format === "epub" ? (
                       <>
                         <button onClick={() => setEpubTocOpen((value) => !value)}>{t.contents}</button>
@@ -2930,6 +2943,7 @@ const translations = {
     sepia: "米色",
     dark: "深色",
     text: "字号",
+    backToShelf: "返回书架",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",
     privateStatus: "状态",
@@ -3085,6 +3099,7 @@ const translations = {
     sepia: "米色",
     dark: "深色",
     text: "字號",
+    backToShelf: "返回書架",
     fullscreen: "全螢幕",
     exitFullscreen: "退出全螢幕",
     privateStatus: "狀態",
@@ -3240,6 +3255,7 @@ const translations = {
     sepia: "Sepia",
     dark: "Dark",
     text: "Text",
+    backToShelf: "Back to Shelf",
     fullscreen: "Fullscreen",
     exitFullscreen: "Exit Fullscreen",
     privateStatus: "Status",
@@ -3395,6 +3411,7 @@ const translations = {
     sepia: "セピア",
     dark: "ダーク",
     text: "文字",
+    backToShelf: "棚へ戻る",
     fullscreen: "全画面",
     exitFullscreen: "全画面終了",
     privateStatus: "状態",
@@ -3550,6 +3567,7 @@ const translations = {
     sepia: "세피아",
     dark: "다크",
     text: "글자",
+    backToShelf: "서가로 돌아가기",
     fullscreen: "전체 화면",
     exitFullscreen: "전체 화면 종료",
     privateStatus: "상태",
