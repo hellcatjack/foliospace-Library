@@ -148,6 +148,7 @@ func Migrate(conn *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
 			status TEXT NOT NULL,
+			target_path TEXT NOT NULL DEFAULT '',
 			current_path TEXT NOT NULL DEFAULT '',
 			discovered_files INTEGER NOT NULL DEFAULT 0,
 			indexed_files INTEGER NOT NULL DEFAULT 0,
@@ -178,6 +179,14 @@ func Migrate(conn *sql.DB) error {
 			UNIQUE(book_id, size, cache_key)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_thumbnail_jobs_status_priority ON thumbnail_jobs(status, priority DESC, id)`,
+		`CREATE TABLE IF NOT EXISTS scan_directories (
+			library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+			abs_path TEXT NOT NULL,
+			mtime TEXT NOT NULL,
+			has_subdirs INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(library_id, abs_path)
+		)`,
 		`CREATE TABLE IF NOT EXISTS job_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			job_id INTEGER NOT NULL REFERENCES scan_jobs(id) ON DELETE CASCADE,
@@ -259,6 +268,9 @@ func Migrate(conn *sql.DB) error {
 		}
 	}
 	if err := addColumnIfMissing(conn, "scan_jobs", "current_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(conn, "scan_jobs", "target_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(conn, "scan_jobs", "metadata_updated_files", "INTEGER NOT NULL DEFAULT 0"); err != nil {

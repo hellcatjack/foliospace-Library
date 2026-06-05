@@ -286,6 +286,7 @@ export type ScanJob = {
   id: number;
   libraryId: number;
   status: string;
+  targetPath: string;
   currentPath: string;
   discoveredFiles: number;
   indexedFiles: number;
@@ -471,7 +472,11 @@ export const api = {
     }),
   deleteLibrary: (libraryId: number) => request<{ ok: boolean }>(`/api/libraries/${libraryId}`, { method: "DELETE" }),
   directories: (path = "/") => request<DirectoryListing>(`/api/fs/directories?path=${encodeURIComponent(path)}`),
-  scan: (libraryId: number) => request<ScanJob>(`/api/libraries/${libraryId}/scan`, { method: "POST" }),
+  scan: (libraryId: number, path?: string) =>
+    request<ScanJob>(`/api/libraries/${libraryId}/scan`, {
+      method: "POST",
+      body: path ? JSON.stringify({ path }) : undefined,
+    }),
   thumbnailWorkerStatus: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/status"),
   pauseThumbnailWorker: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/pause", { method: "POST" }),
   resumeThumbnailWorker: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/resume", { method: "POST" }),

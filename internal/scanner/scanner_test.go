@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -290,6 +291,83 @@ func TestScanLibraryUsesConfiguredWorkerPool(t *testing.T) {
 		}
 	}
 	t.Fatalf("events = %#v, want scan workers event", events)
+}
+
+func TestScanLibraryConcurrentWorkerPoolHandlesLargeDirectories(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 150; i++ {
+		makeZip(t, filepath.Join(root, "Bulk", "book-"+strconv.Itoa(i)+".cbz"), map[string]string{"001.jpg": "image"})
+	}
+
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	st := store.New(conn)
+	lib, err := st.CreateLibrary("Test", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	job, err := NewWithWorkerCount(st, func() int { return 4 }).ScanLibrary(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != "completed" || job.DiscoveredFiles != 150 || job.IndexedFiles != 150 || job.ErrorCount != 0 {
+		t.Fatalf("job = %#v, want all large-directory files discovered and indexed", job)
+	}
+
+	secondJob, err := NewWithWorkerCount(st, func() int { return 4 }).ScanLibrary(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondJob.Status != "completed" || secondJob.DiscoveredFiles != 150 || secondJob.SkippedFiles != 150 || secondJob.IndexedFiles != 0 {
+		t.Fatalf("second job = %#v, want unchanged large-directory files skipped", secondJob)
+	}
+}
+
+func TestScanLibraryPathIndexesSingleFile(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "Series A", "target.cbz")
+	makeZip(t, targetPath, map[string]string{"001.jpg": "image"})
+	makeZip(t, filepath.Join(root, "Series B", "other.cbz"), map[string]string{"001.jpg": "image"})
+
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	st := store.New(conn)
+	lib, err := st.CreateLibrary("Test", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	job, err := NewWithWorkerCount(st, func() int { return 4 }).ScanLibraryPath(lib, targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != "completed" || job.DiscoveredFiles != 1 || job.IndexedFiles != 1 {
+		t.Fatalf("job = %#v, want one targeted file indexed", job)
+	}
+
+	series, err := st.ListSeries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 1 || series[0].Title != "Series A" {
+		t.Fatalf("series = %#v, want only targeted file series", series)
+	}
+	books, err := st.ListBooks(series[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(books) != 1 || books[0].PageCount != 0 || books[0].Analyzed {
+		t.Fatalf("books = %#v, want targeted scan to defer page indexing", books)
+	}
 }
 
 func TestRunScanJobHonorsPauseRequest(t *testing.T) {

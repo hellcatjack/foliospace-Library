@@ -993,6 +993,16 @@ Returns configured library roots. This endpoint can expose configured mount path
 
 Starts a scan job for a library and returns the job.
 
+Request body is optional. Omit it to scan the full library. Pass `path` to scan one container-visible subdirectory or file inside the library root:
+
+```json
+{
+  "path": "/library/韩漫/某作品/Chap.263.zip"
+}
+```
+
+`path` can also be relative to the library root, for example `韩漫/某作品`. The server rejects paths outside the configured library root.
+
 ### `GET /api/jobs`
 
 Lists recent scan jobs.
@@ -1098,7 +1108,7 @@ Good MCP tools:
 - `foliospace.get_progress` and `foliospace.save_progress`: inspect or update reading progress.
 - `foliospace.list_libraries`: list configured libraries for diagnostics and scan selection.
 - `foliospace.list_collections`, `foliospace.save_collection_state`, `foliospace.list_collection_volumes`, and `foliospace.list_collection_assets`: browse the indexed library and save profile-scoped collection favorite/liked flags.
-- `foliospace.scan_library`: start a scan for a configured library.
+- `foliospace.scan_library`: start a scan for a configured library. Optional `path` scans one subdirectory or file inside the library root.
 - `foliospace.list_jobs`, `foliospace.job_events`, `foliospace.pause_job`, `foliospace.cancel_job`, and `foliospace.resume_job`: inspect and control scan progress.
 - `foliospace.list_errors`: surface broken archives, unsupported files, permission errors, and missing mounts.
 - `foliospace.library_health`: summarize scan status, error counts, stale books, empty collections, and missing covers.

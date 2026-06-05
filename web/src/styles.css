@@ -2522,6 +2522,31 @@ button.danger:hover {
   font-size: 15px;
 }
 
+.quickScanBox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
+  gap: 8px;
+  border-bottom: 1px solid #eef2f3;
+  padding: 12px 0;
+}
+
+.quickScanBox div,
+.quickScanBox small {
+  grid-column: 1 / -1;
+}
+
+.quickScanBox small {
+  color: #69777d;
+}
+
+.quickScanBox input {
+  min-width: 0;
+}
+
+.quickScanBox button {
+  grid-column: 1 / -1;
+}
+
 .jobDetail {
   display: grid;
   gap: 14px;

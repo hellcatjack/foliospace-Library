@@ -1146,6 +1146,83 @@ func TestScanSettingsAPI(t *testing.T) {
 	}
 }
 
+func TestLibraryScanAcceptsTargetPath(t *testing.T) {
+	root := t.TempDir()
+	makeZip(t, filepath.Join(root, "Series A", "target.cbz"), map[string]string{"001.jpg": "image"})
+	makeZip(t, filepath.Join(root, "Series B", "other.cbz"), map[string]string{"001.jpg": "image"})
+
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	st := store.New(conn)
+	ts := httptest.NewServer(New(service.New(st), nil).Routes())
+	defer ts.Close()
+
+	body := postJSONBody(t, ts.URL+"/api/libraries", `{"name":"Books","rootPath":"`+root+`"}`)
+	if !strings.Contains(body, `"id":`) {
+		t.Fatalf("library response = %q", body)
+	}
+	libs, err := st.ListLibraries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	postJSONBody(t, ts.URL+"/api/libraries/"+itoa(libs[0].ID)+"/scan", `{"path":"Series A/target.cbz"}`)
+	waitFor(t, func() bool {
+		jobs, err := st.ListScanJobs()
+		return err == nil && len(jobs) > 0 && jobs[0].Status == "completed"
+	})
+
+	series, err := st.ListSeries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 1 || series[0].Title != "Series A" {
+		t.Fatalf("series = %#v, want targeted scan to index only Series A", series)
+	}
+}
+
+func TestLibraryScanReturnsExistingRunningTargetJob(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "Series A")
+	makeZip(t, filepath.Join(targetPath, "target.cbz"), map[string]string{"001.jpg": "image"})
+
+	conn, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	st := store.New(conn)
+	lib, err := st.CreateLibrary("Books", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := st.StartScanJobWithTarget(lib.ID, targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(New(service.New(st), nil).Routes())
+	defer ts.Close()
+
+	body := postJSONBody(t, ts.URL+"/api/libraries/"+itoa(lib.ID)+"/scan", `{"path":"Series A"}`)
+	var got domain.ScanJob
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != existing.ID || got.TargetPath != targetPath {
+		t.Fatalf("scan response = %#v, want existing job %#v", got, existing)
+	}
+	jobs, err := st.ListScanJobs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %#v, want no duplicate job", jobs)
+	}
+}
+
 func TestAPICreatesGameTypedLibraryForZipROMSets(t *testing.T) {
 	root := t.TempDir()
 	makeZip(t, filepath.Join(root, "Arcade", "mslug.zip"), map[string]string{"mslug.rom": "rom"})

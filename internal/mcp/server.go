@@ -139,7 +139,7 @@ func tools() []Tool {
 		{Name: "foliospace.save_collection_state", Description: "Save profile-scoped collection favorite and liked flags.", InputSchema: objectSchema(map[string]any{"collectionId": integerSchema("Collection id."), "profileId": integerSchema("Optional profile id."), "favorite": booleanSchema("Whether the collection is a favorite."), "liked": booleanSchema("Whether the collection is liked.")}, []string{"collectionId"})},
 		{Name: "foliospace.list_collection_volumes", Description: "List books/comics in a collection with optional pagination and filtering.", InputSchema: objectSchema(map[string]any{"collectionId": integerSchema("Collection id."), "limit": integerSchema("Maximum number of items."), "offset": integerSchema("Zero-based item offset."), "q": stringSchema("Optional search query."), "sort": stringSchema("Server-supported sort key."), "profileId": integerSchema("Optional profile id for scoped progress and private state.")}, []string{"collectionId"})},
 		{Name: "foliospace.list_collection_assets", Description: "List mixed assets in a collection, including books, comics, games, documents, and media as available.", InputSchema: objectSchema(map[string]any{"collectionId": integerSchema("Collection id."), "profileId": integerSchema("Optional profile id for scoped book state.")}, []string{"collectionId"})},
-		{Name: "foliospace.scan_library", Description: "Start a scan for a configured library.", InputSchema: objectSchema(map[string]any{"libraryId": integerSchema("Library id.")}, []string{"libraryId"})},
+		{Name: "foliospace.scan_library", Description: "Start a scan for a configured library. Optional path scans one container-visible subdirectory or file inside the library root.", InputSchema: objectSchema(map[string]any{"libraryId": integerSchema("Library id."), "path": stringSchema("Optional target path, absolute inside the container or relative to the library root.")}, []string{"libraryId"})},
 		{Name: "foliospace.list_jobs", Description: "List scan/import jobs.", InputSchema: objectSchema(nil, nil)},
 		{Name: "foliospace.job_events", Description: "List events for a scan/import job.", InputSchema: objectSchema(map[string]any{"jobId": integerSchema("Job id.")}, []string{"jobId"})},
 		{Name: "foliospace.pause_job", Description: "Request pause for a running scan job.", InputSchema: objectSchema(map[string]any{"jobId": integerSchema("Job id.")}, []string{"jobId"})},
@@ -298,7 +298,11 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (any, error)
 	case "foliospace.list_collection_assets":
 		data, err = s.get(ctx, withProfileQuery(fmt.Sprintf("/api/collections/%d/assets", intArg(params.Arguments, "collectionId")), params.Arguments))
 	case "foliospace.scan_library":
-		data, err = s.post(ctx, fmt.Sprintf("/api/libraries/%d/scan", intArg(params.Arguments, "libraryId")), map[string]any{})
+		body := map[string]any{}
+		if path := strings.TrimSpace(stringArg(params.Arguments, "path")); path != "" {
+			body["path"] = path
+		}
+		data, err = s.post(ctx, fmt.Sprintf("/api/libraries/%d/scan", intArg(params.Arguments, "libraryId")), body)
 	case "foliospace.list_jobs":
 		data, err = s.get(ctx, "/api/jobs")
 	case "foliospace.job_events":

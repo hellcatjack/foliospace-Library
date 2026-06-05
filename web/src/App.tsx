@@ -82,6 +82,9 @@ export function App() {
   const [scanSettings, setScanSettings] = useState<ScanSettings>({ scanWorkers: 1 });
   const [scanWorkerDraft, setScanWorkerDraft] = useState(1);
   const [scanSettingsSaving, setScanSettingsSaving] = useState(false);
+  const [quickScanLibraryId, setQuickScanLibraryId] = useState(0);
+  const [quickScanPath, setQuickScanPath] = useState("");
+  const [quickScanRunning, setQuickScanRunning] = useState(false);
   const [activeTask, setActiveTask] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState(0);
@@ -449,6 +452,17 @@ export function App() {
   }
 
   const activeScan = jobs.find((job) => isActiveScanStatus(job.status)) ?? null;
+  const quickScanLibrary = libraries.find((item) => item.id === quickScanLibraryId) ?? libraries[0] ?? null;
+  const quickScanTargetPath = quickScanLibrary ? normalizeQuickScanTarget(quickScanLibrary, quickScanPath) : "";
+  const activeQuickScanJob = quickScanTargetPath
+    ? jobs.find((job) => job.libraryId === quickScanLibrary?.id && job.targetPath === quickScanTargetPath && isActiveScanStatus(job.status)) ?? null
+    : null;
+
+  useEffect(() => {
+    if (quickScanLibraryId === 0 && libraries.length > 0) {
+      setQuickScanLibraryId(libraries[0].id);
+    }
+  }, [quickScanLibraryId, libraries]);
 
   useEffect(() => {
     if (!activeScan) return;
@@ -515,6 +529,12 @@ export function App() {
   }, [selectedBook, pageIndex, epubPagePosition, epubPageCount]);
 
   async function scan(library: Library) {
+    const existingJob = jobs.find((job) => job.libraryId === library.id && job.targetPath === normalizeQuickScanTarget(library, library.rootPath) && isActiveScanStatus(job.status));
+    if (existingJob) {
+      setSelectedJob(existingJob);
+      setStatus(t.quickScanAlreadyRunning(existingJob.id));
+      return;
+    }
     setStatus(`Scanning ${library.rootPath}`);
     setActiveTask("Scanning library");
     try {
@@ -522,6 +542,30 @@ export function App() {
       setStatus(`Scan queued: job #${job.id}`);
       await refreshAll();
     } finally {
+      setActiveTask(null);
+    }
+  }
+
+  async function quickScan() {
+    const library = quickScanLibrary;
+    const path = quickScanPath.trim();
+    if (!library || !path) return;
+    if (activeQuickScanJob) {
+      setSelectedJob(activeQuickScanJob);
+      setStatus(t.quickScanAlreadyRunning(activeQuickScanJob.id));
+      return;
+    }
+    setStatus(t.quickScanStarting(path));
+    setQuickScanRunning(true);
+    setActiveTask(t.quickScan);
+    try {
+      const job = await api.scan(library.id, path);
+      setStatus(t.quickScanQueued(job.id));
+      await refreshAll();
+    } catch (error) {
+      handleAPIError(error);
+    } finally {
+      setQuickScanRunning(false);
       setActiveTask(null);
     }
   }
@@ -2452,6 +2496,32 @@ export function App() {
                   <button onClick={refreshThumbnailWorkerStatus} disabled={thumbnailWorkerBusy}>{t.refreshThumbnailWorker}</button>
                 </div>
               </div>
+              <div className="quickScanBox">
+                <div>
+                  <strong>{t.quickScan}</strong>
+                  <small>{t.quickScanHint}</small>
+                </div>
+                <select
+                  value={quickScanLibraryId || libraries[0]?.id || 0}
+                  onChange={(event) => setQuickScanLibraryId(Number(event.target.value))}
+                  aria-label={t.libraries}
+                >
+                  {libraries.map((library) => (
+                    <option value={library.id} key={library.id}>
+                      {library.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={quickScanPath}
+                  onChange={(event) => setQuickScanPath(event.target.value)}
+                  placeholder="/library/韩漫/某作品/Chap.263.zip"
+                />
+                <button onClick={quickScan} disabled={quickScanRunning || !!activeQuickScanJob || !quickScanPath.trim() || libraries.length === 0}>
+                  {activeQuickScanJob ? t.quickScanAlreadyRunning(activeQuickScanJob.id) : quickScanRunning ? t.quickScanRunning : t.quickScanAction}
+                </button>
+                {activeQuickScanJob && <small>{t.quickScanAlreadyRunningHint(activeQuickScanJob.id)}</small>}
+              </div>
               {jobs.map((job) => (
                 <button className="jobRow" key={job.id} onClick={() => openJob(job)}>
                   <strong>Job #{job.id}</strong>
@@ -3788,6 +3858,14 @@ const translations = {
     thumbnailCacheOrphans: "未引用",
     cleanupThumbnailOrphans: "清理未引用缓存",
     refreshThumbnailWorker: "刷新",
+    quickScan: "快速扫描",
+    quickScanHint: "只扫描一个容器内子目录或单个文件，例如 /library/韩漫/某作品/Chap.263.zip。",
+    quickScanAction: "扫描指定路径",
+    quickScanRunning: "正在扫描",
+    quickScanStarting: (path: string) => `正在扫描 ${path}`,
+    quickScanQueued: (jobId: number) => `快速扫描已加入队列：job #${jobId}`,
+    quickScanAlreadyRunning: (jobId: number) => `已有任务 #${jobId}`,
+    quickScanAlreadyRunningHint: (jobId: number) => `这个路径已有扫描任务进行中：job #${jobId}`,
     pause: "暂停",
     resume: "恢复",
     cancel: "取消",
@@ -3984,6 +4062,14 @@ const translations = {
     thumbnailCacheOrphans: "未引用",
     cleanupThumbnailOrphans: "清理未引用快取",
     refreshThumbnailWorker: "重新整理",
+    quickScan: "快速掃描",
+    quickScanHint: "只掃描一個容器內子目錄或單一檔案，例如 /library/韓漫/某作品/Chap.263.zip。",
+    quickScanAction: "掃描指定路徑",
+    quickScanRunning: "正在掃描",
+    quickScanStarting: (path: string) => `正在掃描 ${path}`,
+    quickScanQueued: (jobId: number) => `快速掃描已加入佇列：job #${jobId}`,
+    quickScanAlreadyRunning: (jobId: number) => `已有任務 #${jobId}`,
+    quickScanAlreadyRunningHint: (jobId: number) => `這個路徑已有掃描任務進行中：job #${jobId}`,
     pause: "暫停",
     resume: "恢復",
     cancel: "取消",
@@ -4180,6 +4266,14 @@ const translations = {
     thumbnailCacheOrphans: "Unlinked",
     cleanupThumbnailOrphans: "Clean unlinked cache",
     refreshThumbnailWorker: "Refresh",
+    quickScan: "Quick scan",
+    quickScanHint: "Scan one container-visible subdirectory or file, for example /library/webtoon/Series/Chap.263.zip.",
+    quickScanAction: "Scan path",
+    quickScanRunning: "Scanning",
+    quickScanStarting: (path: string) => `Scanning ${path}`,
+    quickScanQueued: (jobId: number) => `Quick scan queued: job #${jobId}`,
+    quickScanAlreadyRunning: (jobId: number) => `Job #${jobId} is running`,
+    quickScanAlreadyRunningHint: (jobId: number) => `A scan for this path is already running as job #${jobId}.`,
     pause: "Pause",
     resume: "Resume",
     cancel: "Cancel",
@@ -4376,6 +4470,14 @@ const translations = {
     thumbnailCacheOrphans: "未参照",
     cleanupThumbnailOrphans: "未参照キャッシュを削除",
     refreshThumbnailWorker: "更新",
+    quickScan: "クイックスキャン",
+    quickScanHint: "コンテナ内のサブディレクトリまたは単一ファイルだけをスキャンします。例: /library/webtoon/Series/Chap.263.zip",
+    quickScanAction: "指定パスをスキャン",
+    quickScanRunning: "スキャン中",
+    quickScanStarting: (path: string) => `${path} をスキャン中`,
+    quickScanQueued: (jobId: number) => `クイックスキャンをキューに追加しました: job #${jobId}`,
+    quickScanAlreadyRunning: (jobId: number) => `job #${jobId} が実行中`,
+    quickScanAlreadyRunningHint: (jobId: number) => `このパスのスキャンはすでに job #${jobId} として実行中です。`,
     pause: "一時停止",
     resume: "再開",
     cancel: "キャンセル",
@@ -4572,6 +4674,14 @@ const translations = {
     thumbnailCacheOrphans: "미참조",
     cleanupThumbnailOrphans: "미참조 캐시 정리",
     refreshThumbnailWorker: "새로고침",
+    quickScan: "빠른 스캔",
+    quickScanHint: "컨테이너 안의 하위 폴더나 단일 파일만 스캔합니다. 예: /library/webtoon/Series/Chap.263.zip",
+    quickScanAction: "지정 경로 스캔",
+    quickScanRunning: "스캔 중",
+    quickScanStarting: (path: string) => `${path} 스캔 중`,
+    quickScanQueued: (jobId: number) => `빠른 스캔 대기열 추가: job #${jobId}`,
+    quickScanAlreadyRunning: (jobId: number) => `job #${jobId} 실행 중`,
+    quickScanAlreadyRunningHint: (jobId: number) => `이 경로의 스캔이 이미 job #${jobId}로 실행 중입니다.`,
     pause: "일시정지",
     resume: "재개",
     cancel: "취소",
@@ -4940,6 +5050,22 @@ function continueMeta(book: Book, t: Translation) {
 
 function isActiveScanStatus(status: string) {
   return status === "running" || status === "pause_requested" || status === "cancel_requested";
+}
+
+function normalizeQuickScanTarget(library: Library, inputPath: string) {
+  const rawPath = inputPath.trim();
+  if (!rawPath) return "";
+  const joined = rawPath.startsWith("/") ? rawPath : `${library.rootPath}/${rawPath}`;
+  const parts: string[] = [];
+  joined.split("/").forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") {
+      parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+  return `/${parts.join("/")}`;
 }
 
 function canPauseJob(job: ScanJob) {

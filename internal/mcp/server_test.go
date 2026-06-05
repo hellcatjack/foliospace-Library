@@ -332,6 +332,34 @@ func TestServerCallsSaveCollectionStateTool(t *testing.T) {
 	}
 }
 
+func TestServerCallsTargetedScanLibraryTool(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotBody string
+	server := New("http://foliospace.test", "")
+	server.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotMethod = r.Method
+		gotPath = r.URL.RequestURI()
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		return jsonResponse(`{"id":5,"status":"running"}`), nil
+	})}
+
+	response := server.Handle(context.Background(), toolCall(t, "foliospace.scan_library", map[string]any{
+		"libraryId": 7,
+		"path":      "/library/韩漫/某作品/Chap.263.zip",
+	}))
+	if response.Error != nil {
+		t.Fatalf("scan_library error = %#v", response.Error)
+	}
+	if gotMethod != "POST" || gotPath != "/api/libraries/7/scan" {
+		t.Fatalf("call = %s %s, want scan POST", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotBody, `"path":"/library/韩漫/某作品/Chap.263.zip"`) {
+		t.Fatalf("body = %q, want target path", gotBody)
+	}
+}
+
 func TestServerCallsJobControlTools(t *testing.T) {
 	var calls []string
 	server := New("http://foliospace.test", "")

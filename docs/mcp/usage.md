@@ -145,7 +145,7 @@ Check whether FolioSpace is currently transcoding a video and which item is occu
 - `foliospace.save_collection_state`: save collection `favorite` and `liked` flags.
 - `foliospace.list_collection_volumes`: list books/comics in a collection with optional `limit`, `offset`, `q`, and `sort`.
 - `foliospace.list_collection_assets`: list mixed collection assets by `collectionId`.
-- `foliospace.scan_library`: start a library scan by `libraryId`.
+- `foliospace.scan_library`: start a library scan by `libraryId`; optional `path` scans one container-visible subdirectory or file inside the library root.
 - `foliospace.list_jobs`: list scan/import jobs.
 - `foliospace.job_events`: list job events by `jobId`.
 - `foliospace.pause_job`: request pause for a running scan job.
@@ -243,6 +243,12 @@ Mark a collection as favorite and liked:
 
 ```json
 {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"foliospace.save_collection_state","arguments":{"profileId":2,"collectionId":42,"favorite":true,"liked":true}}}
+```
+
+Scan one newly added chapter without walking the full library:
+
+```json
+{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"foliospace.scan_library","arguments":{"libraryId":1,"path":"/library/韩漫/某作品/Chap.263.zip"}}}
 ```
 
 Pause a running scan job:

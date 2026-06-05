@@ -1481,6 +1481,46 @@ func (s *Store) UpsertFile(bookID int64, libraryID int64, absPath string, relPat
 	return scanFile(row)
 }
 
+func (s *Store) UpsertBasicBookFile(libraryID int64, seriesTitle string, directoryPath string, title string, format string, absPath string, relPath string, size int64, mtime time.Time, ext string) (domain.Book, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return domain.Book{}, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`INSERT INTO series(library_id, title, directory_path, collection_type) VALUES(?, ?, ?, 'directory')
+		ON CONFLICT(library_id, title) DO UPDATE SET directory_path = excluded.directory_path, collection_type = 'directory', updated_at = CURRENT_TIMESTAMP`,
+		libraryID, seriesTitle, directoryPath); err != nil {
+		return domain.Book{}, err
+	}
+
+	var seriesID int64
+	if err := tx.QueryRow(`SELECT id FROM series WHERE library_id = ? AND title = ?`, libraryID, seriesTitle).Scan(&seriesID); err != nil {
+		return domain.Book{}, err
+	}
+
+	if _, err := tx.Exec(`INSERT INTO books(series_id, title, format) VALUES(?, ?, ?)
+		ON CONFLICT(series_id, title, format) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`, seriesID, title, format); err != nil {
+		return domain.Book{}, err
+	}
+
+	var bookID int64
+	if err := tx.QueryRow(`SELECT id FROM books WHERE series_id = ? AND title = ? AND format = ?`, seriesID, title, format).Scan(&bookID); err != nil {
+		return domain.Book{}, err
+	}
+
+	if _, err := tx.Exec(`INSERT INTO files(book_id, library_id, abs_path, rel_path, size, mtime, ext) VALUES(?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(abs_path) DO UPDATE SET book_id = excluded.book_id, library_id = excluded.library_id, rel_path = excluded.rel_path, size = excluded.size, mtime = excluded.mtime, ext = excluded.ext, updated_at = CURRENT_TIMESTAMP`,
+		bookID, libraryID, absPath, relPath, size, mtime.Format(time.RFC3339Nano), ext); err != nil {
+		return domain.Book{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return domain.Book{}, err
+	}
+	return s.BookByID(bookID)
+}
+
 type FileIndex struct {
 	File      domain.File
 	Book      domain.Book
@@ -1568,7 +1608,11 @@ func (s *Store) ListPages(bookID int64) ([]domain.Page, error) {
 }
 
 func (s *Store) StartScanJob(libraryID int64) (domain.ScanJob, error) {
-	res, err := s.db.Exec(`INSERT INTO scan_jobs(library_id, status) VALUES(?, 'running')`, libraryID)
+	return s.StartScanJobWithTarget(libraryID, "")
+}
+
+func (s *Store) StartScanJobWithTarget(libraryID int64, targetPath string) (domain.ScanJob, error) {
+	res, err := s.db.Exec(`INSERT INTO scan_jobs(library_id, status, target_path) VALUES(?, 'running', ?)`, libraryID, targetPath)
 	if err != nil {
 		return domain.ScanJob{}, err
 	}
@@ -1644,12 +1688,12 @@ func (s *Store) CancelInterruptedScanJobs() (int64, error) {
 }
 
 func (s *Store) ScanJobByID(id int64) (domain.ScanJob, error) {
-	row := s.db.QueryRow(`SELECT id, library_id, status, current_path, discovered_files, indexed_files, skipped_files, error_count, metadata_updated_files, reclassified_files, started_at, finished_at FROM scan_jobs WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, library_id, status, target_path, current_path, discovered_files, indexed_files, skipped_files, error_count, metadata_updated_files, reclassified_files, started_at, finished_at FROM scan_jobs WHERE id = ?`, id)
 	return scanJob(row)
 }
 
 func (s *Store) ListScanJobs() ([]domain.ScanJob, error) {
-	rows, err := s.db.Query(`SELECT id, library_id, status, current_path, discovered_files, indexed_files, skipped_files, error_count, metadata_updated_files, reclassified_files, started_at, finished_at FROM scan_jobs ORDER BY id DESC LIMIT 50`)
+	rows, err := s.db.Query(`SELECT id, library_id, status, target_path, current_path, discovered_files, indexed_files, skipped_files, error_count, metadata_updated_files, reclassified_files, started_at, finished_at FROM scan_jobs ORDER BY id DESC LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}
@@ -1664,6 +1708,25 @@ func (s *Store) ListScanJobs() ([]domain.ScanJob, error) {
 		out = append(out, job)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) RunningScanJobByLibraryTarget(libraryID int64, targetPath string) (domain.ScanJob, error) {
+	row := s.db.QueryRow(`SELECT id, library_id, status, target_path, current_path, discovered_files, indexed_files, skipped_files, error_count, metadata_updated_files, reclassified_files, started_at, finished_at
+		FROM scan_jobs
+		WHERE library_id = ? AND target_path = ? AND status IN ('running', 'pause_requested')
+		ORDER BY id DESC LIMIT 1`, libraryID, targetPath)
+	return scanJob(row)
+}
+
+func (s *Store) UpsertScanDirectory(libraryID int64, absPath string, mtime time.Time, hasSubdirs bool) error {
+	hasSubdirValue := 0
+	if hasSubdirs {
+		hasSubdirValue = 1
+	}
+	_, err := s.db.Exec(`INSERT INTO scan_directories(library_id, abs_path, mtime, has_subdirs) VALUES(?, ?, ?, ?)
+		ON CONFLICT(library_id, abs_path) DO UPDATE SET mtime = excluded.mtime, has_subdirs = excluded.has_subdirs, updated_at = CURRENT_TIMESTAMP`,
+		libraryID, absPath, mtime.Format(time.RFC3339Nano), hasSubdirValue)
+	return err
 }
 
 func (s *Store) EnqueueThumbnailJob(input domain.ThumbnailJobInput) (domain.ThumbnailJob, error) {
@@ -2353,7 +2416,7 @@ func scanJob(row scanner) (domain.ScanJob, error) {
 	var job domain.ScanJob
 	var started string
 	var finished string
-	if err := row.Scan(&job.ID, &job.LibraryID, &job.Status, &job.CurrentPath, &job.DiscoveredFiles, &job.IndexedFiles, &job.SkippedFiles, &job.ErrorCount, &job.MetadataUpdatedFiles, &job.ReclassifiedFiles, &started, &finished); err != nil {
+	if err := row.Scan(&job.ID, &job.LibraryID, &job.Status, &job.TargetPath, &job.CurrentPath, &job.DiscoveredFiles, &job.IndexedFiles, &job.SkippedFiles, &job.ErrorCount, &job.MetadataUpdatedFiles, &job.ReclassifiedFiles, &started, &finished); err != nil {
 		return job, err
 	}
 	job.StartedAt = parseTime(started)

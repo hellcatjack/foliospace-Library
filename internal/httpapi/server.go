@@ -889,7 +889,21 @@ func (s *Server) handleLibraryAction(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	job, err := s.service.ScanLibrary(id)
+	var req service.ScanRequest
+	if r.Body != nil {
+		decoder := json.NewDecoder(r.Body)
+		if err := decoder.Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	var job domain.ScanJob
+	var err error
+	if strings.TrimSpace(req.Path) == "" {
+		job, err = s.service.ScanLibrary(id)
+	} else {
+		job, err = s.service.ScanLibraryPath(id, req.Path)
+	}
 	writeJSONOrError(w, job, err)
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -96,6 +97,10 @@ type SetupInput struct {
 
 type ScanSettings struct {
 	ScanWorkers int `json:"scanWorkers"`
+}
+
+type ScanRequest struct {
+	Path string `json:"path"`
 }
 
 type PageImageOptions struct {
@@ -402,7 +407,53 @@ func (s *Service) ScanLibrary(id int64) (domain.ScanJob, error) {
 	if err != nil {
 		return domain.ScanJob{}, err
 	}
+	targetPath := filepath.Clean(lib.RootPath)
+	if existing, err := s.store.RunningScanJobByLibraryTarget(lib.ID, targetPath); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return domain.ScanJob{}, err
+	}
 	return s.scanner.StartScanJob(lib)
+}
+
+func (s *Service) ScanLibraryPath(id int64, targetPath string) (domain.ScanJob, error) {
+	lib, err := s.store.LibraryByID(id)
+	if err != nil {
+		return domain.ScanJob{}, err
+	}
+	targetPath, err = normalizeScanTargetPath(lib, targetPath)
+	if err != nil {
+		return domain.ScanJob{}, err
+	}
+	if existing, err := s.store.RunningScanJobByLibraryTarget(lib.ID, targetPath); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return domain.ScanJob{}, err
+	}
+	return s.scanner.StartScanJobPath(lib, targetPath)
+}
+
+func normalizeScanTargetPath(library domain.Library, targetPath string) (string, error) {
+	targetPath = strings.TrimSpace(targetPath)
+	if targetPath == "" {
+		return filepath.Clean(library.RootPath), nil
+	}
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(library.RootPath, targetPath)
+	}
+	targetPath = filepath.Clean(targetPath)
+	rootPath := filepath.Clean(library.RootPath)
+	relPath, err := filepath.Rel(rootPath, targetPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve target path: %w", err)
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("target path is outside library root: %s", targetPath)
+	}
+	if _, err := os.Stat(targetPath); err != nil {
+		return "", err
+	}
+	return targetPath, nil
 }
 
 func (s *Service) ListSeries() ([]domain.Series, error) {
