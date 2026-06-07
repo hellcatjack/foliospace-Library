@@ -23,8 +23,9 @@ type EpubPageMode = "single" | "double";
 type EpubTheme = "light" | "sepia" | "dark";
 const WEBTOON_RENDER_RADIUS = 2;
 const WEBTOON_PLACEHOLDER_HEIGHT = 2200;
-const PDF_WEBTOON_RENDER_RADIUS = 1;
+const PDF_WEBTOON_RENDER_RADIUS = 0;
 const PDF_WEBTOON_PLACEHOLDER_HEIGHT = 1600;
+const PDF_WEBTOON_MAX_CANVAS_PIXELS = 6_000_000;
 type BookSort = "title" | "recently_added" | "last_read" | "progress" | "unread";
 type Locale = "zh" | "zht" | "en" | "ja" | "ko";
 type LibraryAssetType = "mixed" | "book" | "comic" | "game" | "video";
@@ -3193,6 +3194,7 @@ function PdfReader({
     setDocumentProxy(null);
     setRenderError("");
     setPDFWebtoonPageHeights({});
+    Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
     canvasRefs.current = {};
     Object.values(renderTasksRef.current).forEach((task) => task?.cancel());
     renderTasksRef.current = {};
@@ -3218,6 +3220,8 @@ function PdfReader({
 
     return () => {
       cancelled = true;
+      Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
+      canvasRefs.current = {};
       void task.destroy();
     };
   }, [book.id]);
@@ -3235,8 +3239,16 @@ function PdfReader({
     const isWebtoonMode = pageMode === "webtoon";
     const gap = pageMode === "double" ? 18 : 0;
     const pagesToRender = pdfRenderablePages(renderPageIndex, pdf.numPages, pageMode);
+    const renderableSet = new Set(pagesToRender);
+    Object.entries(canvasRefs.current).forEach(([key, canvas]) => {
+      const pageNumber = Number(key);
+      if (!renderableSet.has(pageNumber)) {
+        releasePDFCanvas(canvas);
+        delete canvasRefs.current[pageNumber];
+      }
+    });
     const slotWidth = isWebtoonMode
-      ? Math.max(160, Math.min(rect.width - 32, 980))
+      ? Math.max(160, Math.min(rect.width - 32, 840))
       : Math.max(120, (rect.width - gap) / Math.max(1, pagesToRender.length));
     const slotHeight = Math.max(160, rect.height);
 
@@ -3247,29 +3259,44 @@ function PdfReader({
           if (!canvas) continue;
           const page = await pdf.getPage(pageNumber);
           if (cancelled) return;
-          const baseViewport = page.getViewport({ scale: 1 });
-          const rawDpr = Math.max(1, window.devicePixelRatio || 1);
-          const dpr = isWebtoonMode ? Math.min(rawDpr, 2) : rawDpr;
-          const cssScale = isWebtoonMode
-            ? slotWidth / baseViewport.width
-            : Math.min(slotWidth / baseViewport.width, slotHeight / baseViewport.height);
-          const viewport = page.getViewport({ scale: cssScale * dpr });
-          const context = canvas.getContext("2d");
-          if (!context) continue;
-          renderTasksRef.current[pageNumber]?.cancel();
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
-          canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
-          if (isWebtoonMode) {
-            const cssHeight = Math.floor(viewport.height / dpr);
-            setPDFWebtoonPageHeights((items) => (items[pageNumber] === cssHeight ? items : { ...items, [pageNumber]: cssHeight }));
-          }
-          const task = page.render({ canvasContext: context, viewport });
-          renderTasksRef.current[pageNumber] = task;
-          await task.promise;
-          if (renderTasksRef.current[pageNumber] === task) {
-            renderTasksRef.current[pageNumber] = null;
+          try {
+            const baseViewport = page.getViewport({ scale: 1 });
+            const rawDpr = Math.max(1, window.devicePixelRatio || 1);
+            const dpr = isWebtoonMode ? 1 : rawDpr;
+            const cssScale = isWebtoonMode
+              ? slotWidth / baseViewport.width
+              : Math.min(slotWidth / baseViewport.width, slotHeight / baseViewport.height);
+            const desiredRenderScale = cssScale * dpr;
+            const maxRenderScale = isWebtoonMode
+              ? Math.sqrt(PDF_WEBTOON_MAX_CANVAS_PIXELS / Math.max(1, baseViewport.width * baseViewport.height))
+              : desiredRenderScale;
+            const renderScale = Math.min(desiredRenderScale, maxRenderScale);
+            const viewport = page.getViewport({ scale: renderScale });
+            const context = canvas.getContext("2d");
+            if (!context) continue;
+            renderTasksRef.current[pageNumber]?.cancel();
+            releasePDFCanvas(canvas);
+            canvas.width = Math.max(1, Math.floor(viewport.width));
+            canvas.height = Math.max(1, Math.floor(viewport.height));
+            const cssWidth = Math.max(1, Math.floor(baseViewport.width * cssScale));
+            const cssHeight = Math.max(1, Math.floor(baseViewport.height * cssScale));
+            canvas.style.width = `${cssWidth}px`;
+            canvas.style.height = `${cssHeight}px`;
+            if (isWebtoonMode) {
+              setPDFWebtoonPageHeights((items) => (items[pageNumber] === cssHeight ? items : { ...items, [pageNumber]: cssHeight }));
+            }
+            const task = page.render({ canvasContext: context, viewport });
+            renderTasksRef.current[pageNumber] = task;
+            await task.promise;
+            if (renderTasksRef.current[pageNumber] === task) {
+              renderTasksRef.current[pageNumber] = null;
+            }
+          } finally {
+            try {
+              page.cleanup();
+            } catch {
+              // PDF.js can reject cleanup while a cancelled render task is still unwinding.
+            }
           }
         }
         if (!cancelled) setRenderError("");
@@ -3285,6 +3312,9 @@ function PdfReader({
       cancelled = true;
       Object.values(renderTasksRef.current).forEach((task) => task?.cancel());
       renderTasksRef.current = {};
+      if (pageMode === "webtoon") {
+        Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
+      }
     };
   }, [documentProxy, renderPageIndex, pageMode, sizeTick]);
 
@@ -3369,6 +3399,14 @@ function pdfRenderablePages(index: number, total: number, mode: ReaderPageMode) 
 
 function isPDFRenderCancelled(error: unknown) {
   return error instanceof Error && error.name === "RenderingCancelledException";
+}
+
+function releasePDFCanvas(canvas: HTMLCanvasElement | null | undefined) {
+  if (!canvas) return;
+  const context = canvas.getContext("2d");
+  context?.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 function CatalogPage({

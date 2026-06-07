@@ -165,3 +165,30 @@ test("PDF webtoon mode does not render every page at once", async () => {
     "PDF webtoon mode should use an explicit render radius like image webtoon mode",
   );
 });
+
+test("PDF webtoon rendering caps canvas memory and releases offscreen canvases", async () => {
+  const appSource = await readFile(path.join(srcDir, "App.tsx"), "utf8");
+
+  assert.ok(appSource.includes("const PDF_WEBTOON_RENDER_RADIUS = 0;"), "PDF webtoon should render only the current page on memory-constrained browsers");
+  assert.ok(appSource.includes("const PDF_WEBTOON_MAX_CANVAS_PIXELS = 6_000_000;"), "PDF webtoon canvases should have a hard pixel budget");
+  assert.match(
+    appSource,
+    /const dpr = isWebtoonMode \? 1 : rawDpr;/,
+    "PDF webtoon should not multiply huge long-strip canvases by high devicePixelRatio",
+  );
+  assert.match(
+    appSource,
+    /Math\.sqrt\(PDF_WEBTOON_MAX_CANVAS_PIXELS \/ Math\.max\(1, baseViewport\.width \* baseViewport\.height\)\)/,
+    "PDF webtoon render scale should be capped from page area",
+  );
+  assert.match(
+    appSource,
+    /Object\.entries\(canvasRefs\.current\)[\s\S]*releasePDFCanvas\(canvas\);[\s\S]*delete canvasRefs\.current\[pageNumber\];/,
+    "PDF webtoon should actively release canvases that leave the render window",
+  );
+  assert.match(
+    appSource,
+    /function releasePDFCanvas\(canvas: HTMLCanvasElement \| null \| undefined\)[\s\S]*canvas\.width = 0;[\s\S]*canvas\.height = 0;/,
+    "releasePDFCanvas should drop the canvas backing store",
+  );
+});
