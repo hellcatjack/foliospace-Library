@@ -535,7 +535,11 @@ export const api = {
       method: "POST",
       body: path ? JSON.stringify({ path }) : undefined,
     }),
-  thumbnailWorkerStatus: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/status"),
+  thumbnailWorkerStatus: (options?: { detail?: "summary" | "full"; timeoutMs?: number }) =>
+    request<ThumbnailWorkerStatus>(
+      `/api/thumbnail-worker/status${options?.detail === "full" ? "?detail=full" : ""}`,
+      { timeoutMs: options?.timeoutMs },
+    ),
   pauseThumbnailWorker: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/pause", { method: "POST" }),
   resumeThumbnailWorker: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/resume", { method: "POST" }),
   cancelThumbnailJobs: () => request<ThumbnailWorkerStatus>("/api/thumbnail-worker/cancel", { method: "POST" }),

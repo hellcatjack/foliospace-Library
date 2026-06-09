@@ -189,7 +189,7 @@ export function App() {
         api.libraries(),
         api.series(),
         api.jobs(),
-        api.thumbnailWorkerStatus(),
+        api.thumbnailWorkerStatus({ timeoutMs: 4_000 }),
         api.errors(),
         api.continueReading(),
         api.recentBooks(),
@@ -639,7 +639,7 @@ export function App() {
 
   async function refreshThumbnailWorkerStatus() {
     try {
-      setThumbnailWorkerStatus(await api.thumbnailWorkerStatus());
+      setThumbnailWorkerStatus(await api.thumbnailWorkerStatus({ detail: "full", timeoutMs: 15_000 }));
     } catch (error) {
       handleAPIError(error);
     }
@@ -1056,7 +1056,7 @@ export function App() {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const nextStatus = await api.thumbnailWorkerStatus();
+        const nextStatus = await api.thumbnailWorkerStatus({ timeoutMs: 4_000 });
         if (!cancelled) setThumbnailWorkerStatus(nextStatus);
       } catch (error) {
         if (!cancelled) setStatus(error instanceof Error ? error.message : "Failed to load thumbnail worker");

@@ -1395,7 +1395,13 @@ func (s *Server) handleThumbnailWorkerAction(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	status, err := s.service.ThumbnailWorkerStatus()
+	var status domain.ThumbnailQueueStatus
+	var err error
+	if action == "cleanup-orphans" || r.URL.Query().Get("detail") == "full" {
+		status, err = s.service.ThumbnailWorkerStatus()
+	} else {
+		status, err = s.service.ThumbnailWorkerQueueStatus()
+	}
 	writeJSONOrError(w, status, err)
 }
 
