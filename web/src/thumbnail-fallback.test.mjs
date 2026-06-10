@@ -148,3 +148,48 @@ test("switching comic page modes does not immediately overwrite legacy progress"
     "switching between paged comic modes should not rewrite the saved progress until the user changes pages",
   );
 });
+
+test("PDF webtoon mode does not render every page at once", async () => {
+  const appSource = await readFile(path.join(srcDir, "App.tsx"), "utf8");
+  const start = appSource.indexOf("function pdfRenderablePages");
+  const end = appSource.indexOf("function isPDFRenderCancelled", start);
+  const renderableSource = start >= 0 && end > start ? appSource.slice(start, end) : "";
+
+  assert.doesNotMatch(
+    renderableSource,
+    /if\s*\(\s*mode\s*===\s*"webtoon"\s*\)\s*return\s+Array\.from\(\{\s*length:\s*total\s*\}/,
+    "PDF webtoon mode should window rendered canvases instead of allocating one canvas per PDF page",
+  );
+  assert.ok(
+    renderableSource.includes("PDF_WEBTOON_RENDER_RADIUS"),
+    "PDF webtoon mode should use an explicit render radius like image webtoon mode",
+  );
+});
+
+test("PDF webtoon rendering caps canvas memory and releases offscreen canvases", async () => {
+  const appSource = await readFile(path.join(srcDir, "App.tsx"), "utf8");
+
+  assert.ok(appSource.includes("const PDF_WEBTOON_RENDER_RADIUS = 2;"), "PDF webtoon should render the current page plus two neighbors on each side");
+  assert.ok(appSource.includes("const PDF_WEBTOON_MAX_CANVAS_PIXELS = 6_000_000;"), "PDF webtoon canvases should have a hard pixel budget");
+  assert.match(
+    appSource,
+    /const dpr = isWebtoonMode \? 1 : rawDpr;/,
+    "PDF webtoon should not multiply huge long-strip canvases by high devicePixelRatio",
+  );
+  assert.match(
+    appSource,
+    /Math\.sqrt\(PDF_WEBTOON_MAX_CANVAS_PIXELS \/ Math\.max\(1, baseViewport\.width \* baseViewport\.height\)\)/,
+    "PDF webtoon render scale should be capped from page area",
+  );
+  assert.ok(appSource.includes("? slotWidth / baseViewport.width"), "PDF webtoon pages should keep a normal full-width reading scale");
+  assert.match(
+    appSource,
+    /Object\.entries\(canvasRefs\.current\)[\s\S]*releasePDFCanvas\(canvas\);[\s\S]*delete canvasRefs\.current\[pageNumber\];/,
+    "PDF webtoon should actively release canvases that leave the render window",
+  );
+  assert.match(
+    appSource,
+    /function releasePDFCanvas\(canvas: HTMLCanvasElement \| null \| undefined\)[\s\S]*canvas\.width = 0;[\s\S]*canvas\.height = 0;/,
+    "releasePDFCanvas should drop the canvas backing store",
+  );
+});

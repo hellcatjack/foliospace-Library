@@ -285,6 +285,19 @@ func genericBookThumbnailStream(book domain.Book, size string) (ThumbnailStream,
 }
 
 func (s *Service) ThumbnailWorkerStatus() (domain.ThumbnailQueueStatus, error) {
+	status, err := s.ThumbnailWorkerQueueStatus()
+	if err != nil {
+		return status, err
+	}
+	cache, err := s.thumbnailCacheStatus()
+	if err != nil {
+		return status, err
+	}
+	status.Cache = cache
+	return status, nil
+}
+
+func (s *Service) ThumbnailWorkerQueueStatus() (domain.ThumbnailQueueStatus, error) {
 	status, err := s.store.ThumbnailQueueStatus()
 	if err != nil {
 		return status, err
@@ -296,11 +309,6 @@ func (s *Service) ThumbnailWorkerStatus() (domain.ThumbnailQueueStatus, error) {
 			status.Status = "paused"
 		}
 	}
-	cache, err := s.thumbnailCacheStatus()
-	if err != nil {
-		return status, err
-	}
-	status.Cache = cache
 	return status, nil
 }
 

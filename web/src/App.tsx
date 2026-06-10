@@ -48,6 +48,10 @@ type EpubPageMode = "single" | "double";
 type EpubTheme = "light" | "sepia" | "dark";
 const WEBTOON_RENDER_RADIUS = 2;
 const WEBTOON_PLACEHOLDER_HEIGHT = 2200;
+const PDF_WEBTOON_RENDER_RADIUS = 2;
+const PDF_WEBTOON_PLACEHOLDER_HEIGHT = 1600;
+const PDF_WEBTOON_MAX_CANVAS_PIXELS = 6_000_000;
+const BOOTSTRAP_TIMEOUT_MS = 12_000;
 type BookSort = "title" | "recently_added" | "last_read" | "progress" | "unread";
 type Locale = "zh" | "zht" | "en" | "ja" | "ko";
 type LibraryAssetType = "mixed" | "book" | "comic" | "game" | "video";
@@ -120,6 +124,7 @@ export function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authInput, setAuthInput] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("Checking access settings.");
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [setupToken, setSetupToken] = useState("");
@@ -631,7 +636,7 @@ export function App() {
         api.libraries(),
         api.series(),
         api.jobs(),
-        api.thumbnailWorkerStatus(),
+        api.thumbnailWorkerStatus({ timeoutMs: 4_000 }),
         api.errors(),
         api.continueReading(),
         api.recentBooks(),
@@ -710,7 +715,8 @@ export function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const setup = await api.setupStatus();
+        setAuthMessage("Checking setup status.");
+        const setup = await api.setupStatus({ timeoutMs: BOOTSTRAP_TIMEOUT_MS });
         setSetupStatus(setup);
         if (!setup.initialized) {
           setSetupRequired(true);
@@ -724,7 +730,8 @@ export function App() {
           setStatus("Setup required");
           return;
         }
-        const auth = await api.authStatus();
+        setAuthMessage("Checking authentication mode.");
+        const auth = await api.authStatus({ timeoutMs: BOOTSTRAP_TIMEOUT_MS });
         setAuthEnabled(auth.enabled);
         const storedToken = getAuthToken();
         if (auth.enabled && !storedToken) {
@@ -733,8 +740,10 @@ export function App() {
           return;
         }
         if (auth.enabled) {
-          await api.authCheck(storedToken);
+          setAuthMessage("Checking saved access token.");
+          await api.authCheck(storedToken, { timeoutMs: BOOTSTRAP_TIMEOUT_MS });
         }
+        setAuthMessage("Loading library overview.");
         await refreshAll(true);
       } catch (error) {
         if (isUnauthorized(error)) {
@@ -743,7 +752,9 @@ export function App() {
           setStatus("Authentication required");
           return;
         }
-        setStatus(error instanceof Error ? error.message : "Failed to load");
+        const message = error instanceof Error ? error.message : "Failed to load";
+        setAuthError(message);
+        setStatus(message);
       } finally {
         setAuthChecked(true);
         setActiveTask(null);
@@ -1094,7 +1105,7 @@ export function App() {
 
   async function refreshThumbnailWorkerStatus() {
     try {
-      setThumbnailWorkerStatus(await api.thumbnailWorkerStatus());
+      setThumbnailWorkerStatus(await api.thumbnailWorkerStatus({ detail: "full", timeoutMs: 15_000 }));
     } catch (error) {
       handleAPIError(error);
     }
@@ -1219,12 +1230,16 @@ export function App() {
   }
 
   function scrollCollectionContentIntoView() {
+    const scroll = (behavior: ScrollBehavior) => {
+      const node = collectionContentRef.current;
+      if (!node) return;
+      const targetTop = Math.max(0, node.getBoundingClientRect().top + window.scrollY - 12);
+      window.scrollTo({ top: targetTop, behavior });
+    };
     window.requestAnimationFrame(() => {
-      collectionContentRef.current?.scrollIntoView({
-        block: "start",
-        behavior: "smooth",
-      });
+      window.requestAnimationFrame(() => scroll("smooth"));
     });
+    window.setTimeout(() => scroll("auto"), 300);
   }
 
   const loadBooksPage = useCallback(
@@ -1514,7 +1529,7 @@ export function App() {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const nextStatus = await api.thumbnailWorkerStatus();
+        const nextStatus = await api.thumbnailWorkerStatus({ timeoutMs: 4_000 });
         if (!cancelled) setThumbnailWorkerStatus(nextStatus);
       } catch (error) {
         if (!cancelled) setStatus(error instanceof Error ? error.message : "Failed to load thumbnail worker");
@@ -1531,6 +1546,8 @@ export function App() {
   async function openBook(book: Book) {
     stopEpubTts();
     setActiveTask(`Opening ${book.title}`);
+    setSelectedBook(book);
+    setView("reader");
     setEpubManifest(null);
     setPageIndex(0);
     setDisplayedPageIndex(0);
@@ -1553,11 +1570,10 @@ export function App() {
     setEpubTtsSettingsOpen(false);
     setReaderLoadState("loading");
     try {
+      await nextFrame();
       const nextPages = await api.pages(book.id);
       setPages(nextPages);
       if (book.format === "epub") {
-        setSelectedBook(book);
-        setView("reader");
         const [manifestResult, progressResult] = await Promise.allSettled([api.epubManifest(book.id), api.readProgress(book.id)]);
         const manifest = manifestResult.status === "fulfilled" ? manifestResult.value : fallbackEpubManifest(book, nextPages);
         const progress = progressResult.status === "fulfilled" ? progressResult.value : null;
@@ -1606,8 +1622,6 @@ export function App() {
         }
         setReaderLoadState("ready");
       }
-      setSelectedBook(book);
-      setView("reader");
     } catch (error) {
       setReaderLoadState("error");
       setStatus(error instanceof Error ? error.message : `Failed to open ${book.title}`);
@@ -3391,12 +3405,12 @@ export function App() {
           </form>
         </div>
       )}
-      {(!authChecked || authRequired) && (
+      {(!authChecked || authRequired || authError) && (
         <div className="authOverlay" role="dialog" aria-modal="true" aria-labelledby="auth-title">
           <form className="authPanel" onSubmit={submitAuth}>
             <div>
               <h1 id="auth-title">FolioSpace Library</h1>
-              <small>{authChecked ? "Enter the NAS access token." : "Checking access settings."}</small>
+              <small>{authChecked ? "Enter the NAS access token." : authMessage}</small>
             </div>
             {authRequired && (
               <>
@@ -3409,6 +3423,14 @@ export function App() {
                 />
                 {authError && <span className="authError">{authError}</span>}
                 <button disabled={!authInput.trim()}>Unlock</button>
+              </>
+            )}
+            {!authRequired && authError && (
+              <>
+                <span className="authError">{authError}</span>
+                <button type="button" onClick={() => window.location.reload()}>
+                  Retry
+                </button>
               </>
             )}
           </form>
@@ -3878,12 +3900,13 @@ function PdfReader({
   onPageChange?: (pageIndex: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
-  const renderTasksRef = useRef<Array<{ cancel: () => void } | null>>([]);
+  const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const renderTasksRef = useRef<Record<number, { cancel: () => void } | null>>({});
   const scrollFrameRef = useRef<number | null>(null);
   const [documentProxy, setDocumentProxy] = useState<PDFDocumentProxy | null>(null);
   const [renderError, setRenderError] = useState("");
   const [sizeTick, setSizeTick] = useState(0);
+  const [pdfWebtoonPageHeights, setPDFWebtoonPageHeights] = useState<Record<number, number>>({});
 
   useEffect(() => {
     const node = containerRef.current;
@@ -3897,6 +3920,11 @@ function PdfReader({
     let cancelled = false;
     setDocumentProxy(null);
     setRenderError("");
+    setPDFWebtoonPageHeights({});
+    Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
+    canvasRefs.current = {};
+    Object.values(renderTasksRef.current).forEach((task) => task?.cancel());
+    renderTasksRef.current = {};
     const token = getAuthToken();
     const task = getDocument({
       url: authenticatedResourcePath(`/api/books/${book.id}/pages/0`),
@@ -3919,53 +3947,83 @@ function PdfReader({
 
     return () => {
       cancelled = true;
+      Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
+      canvasRefs.current = {};
       void task.destroy();
     };
   }, [book.id]);
 
-  const renderPageIndex = pageMode === "webtoon" ? 0 : pageIndex;
+  const renderPageIndex = pageIndex;
 
   useEffect(() => {
     if (!documentProxy || !containerRef.current) return;
     let cancelled = false;
     const pdf = documentProxy;
     const container = containerRef.current;
-    renderTasksRef.current.forEach((task) => task?.cancel());
-    renderTasksRef.current = [];
+    Object.values(renderTasksRef.current).forEach((task) => task?.cancel());
+    renderTasksRef.current = {};
     const rect = container.getBoundingClientRect();
     const isWebtoonMode = pageMode === "webtoon";
     const gap = pageMode === "double" ? 18 : 0;
-    const pagesToRender = pdfVisiblePages(renderPageIndex, pdf.numPages, pageMode);
+    const pagesToRender = pdfRenderablePages(renderPageIndex, pdf.numPages, pageMode);
+    const renderableSet = new Set(pagesToRender);
+    Object.entries(canvasRefs.current).forEach(([key, canvas]) => {
+      const pageNumber = Number(key);
+      if (!renderableSet.has(pageNumber)) {
+        releasePDFCanvas(canvas);
+        delete canvasRefs.current[pageNumber];
+      }
+    });
     const slotWidth = isWebtoonMode
-      ? Math.max(160, Math.min(rect.width - 32, 980))
+      ? Math.max(160, Math.min(rect.width - 32, 840))
       : Math.max(120, (rect.width - gap) / Math.max(1, pagesToRender.length));
     const slotHeight = Math.max(160, rect.height);
 
     async function render() {
       try {
-        for (const [index, pageNumber] of pagesToRender.entries()) {
-          const canvas = canvasRefs.current[index];
+        for (const pageNumber of pagesToRender) {
+          const canvas = canvasRefs.current[pageNumber];
           if (!canvas) continue;
           const page = await pdf.getPage(pageNumber);
           if (cancelled) return;
-          const baseViewport = page.getViewport({ scale: 1 });
-          const dpr = Math.max(1, window.devicePixelRatio || 1);
-          const cssScale = isWebtoonMode
-            ? slotWidth / baseViewport.width
-            : Math.min(slotWidth / baseViewport.width, slotHeight / baseViewport.height);
-          const viewport = page.getViewport({ scale: cssScale * dpr });
-          const context = canvas.getContext("2d");
-          if (!context) continue;
-          renderTasksRef.current[index]?.cancel();
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
-          canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
-          const task = page.render({ canvasContext: context, viewport });
-          renderTasksRef.current[index] = task;
-          await task.promise;
-          if (renderTasksRef.current[index] === task) {
-            renderTasksRef.current[index] = null;
+          try {
+            const baseViewport = page.getViewport({ scale: 1 });
+            const rawDpr = Math.max(1, window.devicePixelRatio || 1);
+            const dpr = isWebtoonMode ? 1 : rawDpr;
+            const cssScale = isWebtoonMode
+              ? slotWidth / baseViewport.width
+              : Math.min(slotWidth / baseViewport.width, slotHeight / baseViewport.height);
+            const desiredRenderScale = cssScale * dpr;
+            const maxRenderScale = isWebtoonMode
+              ? Math.sqrt(PDF_WEBTOON_MAX_CANVAS_PIXELS / Math.max(1, baseViewport.width * baseViewport.height))
+              : desiredRenderScale;
+            const renderScale = Math.min(desiredRenderScale, maxRenderScale);
+            const viewport = page.getViewport({ scale: renderScale });
+            const context = canvas.getContext("2d");
+            if (!context) continue;
+            renderTasksRef.current[pageNumber]?.cancel();
+            releasePDFCanvas(canvas);
+            canvas.width = Math.max(1, Math.floor(viewport.width));
+            canvas.height = Math.max(1, Math.floor(viewport.height));
+            const cssWidth = Math.max(1, Math.floor(baseViewport.width * cssScale));
+            const cssHeight = Math.max(1, Math.floor(baseViewport.height * cssScale));
+            canvas.style.width = `${cssWidth}px`;
+            canvas.style.height = `${cssHeight}px`;
+            if (isWebtoonMode) {
+              setPDFWebtoonPageHeights((items) => (items[pageNumber] === cssHeight ? items : { ...items, [pageNumber]: cssHeight }));
+            }
+            const task = page.render({ canvasContext: context, viewport });
+            renderTasksRef.current[pageNumber] = task;
+            await task.promise;
+            if (renderTasksRef.current[pageNumber] === task) {
+              renderTasksRef.current[pageNumber] = null;
+            }
+          } finally {
+            try {
+              page.cleanup();
+            } catch {
+              // PDF.js can reject cleanup while a cancelled render task is still unwinding.
+            }
           }
         }
         if (!cancelled) setRenderError("");
@@ -3979,8 +4037,11 @@ function PdfReader({
     void render();
     return () => {
       cancelled = true;
-      renderTasksRef.current.forEach((task) => task?.cancel());
-      renderTasksRef.current = [];
+      Object.values(renderTasksRef.current).forEach((task) => task?.cancel());
+      renderTasksRef.current = {};
+      if (pageMode === "webtoon") {
+        Object.values(canvasRefs.current).forEach((canvas) => releasePDFCanvas(canvas));
+      }
     };
   }, [documentProxy, renderPageIndex, pageMode, sizeTick]);
 
@@ -3992,7 +4053,8 @@ function PdfReader({
     };
   }, []);
 
-  const pages = documentProxy ? pdfVisiblePages(renderPageIndex, documentProxy.numPages, pageMode) : [];
+  const pages = documentProxy ? pdfLayoutPages(renderPageIndex, documentProxy.numPages, pageMode) : [];
+  const renderablePages = new Set(documentProxy ? pdfRenderablePages(renderPageIndex, documentProxy.numPages, pageMode) : []);
 
   function updatePDFWebtoonPosition() {
     if (pageMode !== "webtoon" || !containerRef.current || !onPageChange) return;
@@ -4003,7 +4065,7 @@ function PdfReader({
       scrollFrameRef.current = null;
       const node = containerRef.current;
       if (!node) return;
-      const markers = Array.from(node.querySelectorAll<HTMLCanvasElement>("[data-page-index]"));
+      const markers = Array.from(node.querySelectorAll<HTMLElement>("[data-page-index]"));
       const viewportAnchor = node.scrollTop + node.clientHeight * 0.28;
       let current = 0;
       for (const marker of markers) {
@@ -4022,29 +4084,56 @@ function PdfReader({
   return (
     <div ref={containerRef} className={`pdfReader ${pageMode}`} onScroll={updatePDFWebtoonPosition}>
       {renderError && <div className="pdfReaderError">{renderError}</div>}
-      {pages.map((pageNumber, index) => (
-        <canvas
-          key={`${book.id}-${pageNumber}`}
-          ref={(node) => {
-            canvasRefs.current[index] = node;
-          }}
-          data-page-index={pageNumber - 1}
-          aria-label={`PDF page ${pageNumber}`}
-        />
-      ))}
+      {pages.map((pageNumber) => {
+        const shouldRenderCanvas = pageMode !== "webtoon" || renderablePages.has(pageNumber);
+        return shouldRenderCanvas ? (
+          <canvas
+            key={`${book.id}-${pageNumber}`}
+            ref={(node) => {
+              canvasRefs.current[pageNumber] = node;
+            }}
+            data-page-index={pageNumber - 1}
+            aria-label={`PDF page ${pageNumber}`}
+          />
+        ) : (
+          <div
+            className="pdfPagePlaceholder"
+            data-page-index={pageNumber - 1}
+            key={`${book.id}-${pageNumber}-placeholder`}
+            style={{ minHeight: pdfWebtoonPageHeights[pageNumber] || PDF_WEBTOON_PLACEHOLDER_HEIGHT }}
+            aria-label={`PDF page ${pageNumber} placeholder`}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function pdfVisiblePages(index: number, total: number, mode: ReaderPageMode) {
+function pdfLayoutPages(index: number, total: number, mode: ReaderPageMode) {
   const first = Math.max(1, Math.min(total, index + 1));
-  if (mode === "single") return [first];
   if (mode === "webtoon") return Array.from({ length: total }, (_, offset) => offset + 1);
+  if (mode === "single") return [first];
   return [first, first + 1].filter((page) => page >= 1 && page <= total);
+}
+
+function pdfRenderablePages(index: number, total: number, mode: ReaderPageMode) {
+  const first = Math.max(1, Math.min(total, index + 1));
+  if (mode !== "webtoon") return pdfLayoutPages(index, total, mode);
+  const start = Math.max(1, first - PDF_WEBTOON_RENDER_RADIUS);
+  const end = Math.min(total, first + PDF_WEBTOON_RENDER_RADIUS);
+  return Array.from({ length: end - start + 1 }, (_, offset) => start + offset);
 }
 
 function isPDFRenderCancelled(error: unknown) {
   return error instanceof Error && error.name === "RenderingCancelledException";
+}
+
+function releasePDFCanvas(canvas: HTMLCanvasElement | null | undefined) {
+  if (!canvas) return;
+  const context = canvas.getContext("2d");
+  context?.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 function CatalogPage({
@@ -5401,6 +5490,12 @@ function encodeResourcePath(value: string) {
     .split("/")
     .map((part) => encodeURIComponent(part))
     .join("/");
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
 }
 
 function authenticatedResourcePath(path: string | undefined) {

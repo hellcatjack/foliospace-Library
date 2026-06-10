@@ -27,7 +27,7 @@ type Options struct {
 }
 
 const authCookieName = "foliospace_api_token"
-const serviceVersion = "0.91"
+const serviceVersion = "0.932"
 
 func New(service *service.Service, static http.Handler) *Server {
 	return NewWithOptions(service, static, Options{})
@@ -285,29 +285,31 @@ func (s *Server) handleClientInfo(w http.ResponseWriter, r *http.Request) {
 		APIVersion:       "v1",
 		SupportedFormats: []string{"cbz", "zip", "epub", "pdf", "mp4", "m4v", "mov", "mkv", "avi", "webm", "nes", "sfc", "smc", "gba", "gb", "gbc", "nds", "3ds", "cia", "chd", "iso", "bin", "cue", "7z"},
 		Capabilities: clientCapabilities{
-			ClientHome:         true,
-			UnifiedManifest:    true,
-			ProgressSync:       true,
-			EPUBStreaming:      true,
-			PDFStreaming:       true,
-			PDFPageLayout:      true,
-			PDFWebtoonLayout:   true,
-			ComicWebtoonLayout: true,
-			CompactReader:      true,
-			PageStreaming:      true,
-			GameShelf:          true,
-			GameCatalog:        true,
-			VideoCatalog:       true,
-			VideoHLS:           true,
-			PrivateState:       true,
-			Search:             true,
-			Preferences:        true,
-			Profiles:           true,
-			BearerTokenAuth:    s.authEnabled(),
-			SetupWizard:        true,
-			ScannerJobEvents:   true,
-			ScannerJobControl:  true,
-			ScanSettings:       true,
+			ClientHome:          true,
+			UnifiedManifest:     true,
+			ProgressSync:        true,
+			EPUBStreaming:       true,
+			PDFStreaming:        true,
+			PDFPageLayout:       true,
+			PDFWebtoonLayout:    true,
+			ComicWebtoonLayout:  true,
+			WebtoonPositionSync: true,
+			CompactReader:       true,
+			PageStreaming:       true,
+			PageImageDownsample: true,
+			GameShelf:           true,
+			GameCatalog:         true,
+			VideoCatalog:        true,
+			VideoHLS:            true,
+			PrivateState:        true,
+			Search:              true,
+			Preferences:         true,
+			Profiles:            true,
+			BearerTokenAuth:     s.authEnabled(),
+			SetupWizard:         true,
+			ScannerJobEvents:    true,
+			ScannerJobControl:   true,
+			ScanSettings:        true,
 		},
 	})
 }
@@ -1394,7 +1396,13 @@ func (s *Server) handleThumbnailWorkerAction(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	status, err := s.service.ThumbnailWorkerStatus()
+	var status domain.ThumbnailQueueStatus
+	var err error
+	if action == "cleanup-orphans" || r.URL.Query().Get("detail") == "full" {
+		status, err = s.service.ThumbnailWorkerStatus()
+	} else {
+		status, err = s.service.ThumbnailWorkerQueueStatus()
+	}
 	writeJSONOrError(w, status, err)
 }
 
@@ -1553,29 +1561,31 @@ type clientInfoResponse struct {
 }
 
 type clientCapabilities struct {
-	ClientHome         bool `json:"clientHome"`
-	UnifiedManifest    bool `json:"unifiedManifest"`
-	ProgressSync       bool `json:"progressSync"`
-	EPUBStreaming      bool `json:"epubStreaming"`
-	PDFStreaming       bool `json:"pdfStreaming"`
-	PDFPageLayout      bool `json:"pdfPageLayout"`
-	PDFWebtoonLayout   bool `json:"pdfWebtoonLayout"`
-	ComicWebtoonLayout bool `json:"comicWebtoonLayout"`
-	CompactReader      bool `json:"compactReader"`
-	PageStreaming      bool `json:"pageStreaming"`
-	GameShelf          bool `json:"gameShelf"`
-	GameCatalog        bool `json:"gameCatalog"`
-	VideoCatalog       bool `json:"videoCatalog"`
-	VideoHLS           bool `json:"videoHls"`
-	PrivateState       bool `json:"privateState"`
-	Search             bool `json:"search"`
-	Preferences        bool `json:"preferences"`
-	Profiles           bool `json:"profiles"`
-	BearerTokenAuth    bool `json:"bearerTokenAuth"`
-	SetupWizard        bool `json:"setupWizard"`
-	ScannerJobEvents   bool `json:"scannerJobEvents"`
-	ScannerJobControl  bool `json:"scannerJobControl"`
-	ScanSettings       bool `json:"scanSettings"`
+	ClientHome          bool `json:"clientHome"`
+	UnifiedManifest     bool `json:"unifiedManifest"`
+	ProgressSync        bool `json:"progressSync"`
+	EPUBStreaming       bool `json:"epubStreaming"`
+	PDFStreaming        bool `json:"pdfStreaming"`
+	PDFPageLayout       bool `json:"pdfPageLayout"`
+	PDFWebtoonLayout    bool `json:"pdfWebtoonLayout"`
+	ComicWebtoonLayout  bool `json:"comicWebtoonLayout"`
+	WebtoonPositionSync bool `json:"webtoonPositionSync"`
+	CompactReader       bool `json:"compactReader"`
+	PageStreaming       bool `json:"pageStreaming"`
+	PageImageDownsample bool `json:"pageImageDownsample"`
+	GameShelf           bool `json:"gameShelf"`
+	GameCatalog         bool `json:"gameCatalog"`
+	VideoCatalog        bool `json:"videoCatalog"`
+	VideoHLS            bool `json:"videoHls"`
+	PrivateState        bool `json:"privateState"`
+	Search              bool `json:"search"`
+	Preferences         bool `json:"preferences"`
+	Profiles            bool `json:"profiles"`
+	BearerTokenAuth     bool `json:"bearerTokenAuth"`
+	SetupWizard         bool `json:"setupWizard"`
+	ScannerJobEvents    bool `json:"scannerJobEvents"`
+	ScannerJobControl   bool `json:"scannerJobControl"`
+	ScanSettings        bool `json:"scanSettings"`
 }
 
 type clientHomeResponse struct {
